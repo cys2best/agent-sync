@@ -839,12 +839,11 @@ shared files below so other agents see the same thing.
 @HANDOFF.md
 
 ## Claude Code specific
-- Use the Superpowers skills (writing-plans, subagent-driven-development,
-  requesting-code-review) for any multi-step task. Superpowers owns
-  `.superpowers/sdd/<plan-name>/` and `docs/superpowers/` — don't
-  hand-edit these or create files there yourself; that's the tool's
-  job. Before starting work, check `.superpowers/sdd/` for active plans
-  and the relevant `progress.md` for current task status.
+- Use the Superpowers skills for any multi-step task. Superpowers owns
+  `.superpowers/sdd/`, `docs/superpowers/` — don't hand-edit these or
+  create files there yourself; that's the tool's job. Before starting
+  work, check Superpowers's own state under those paths for active
+  plans and current task status.
 - Read `HANDOFF.md` to see which agent (Codex) last touched each
   plan/task and what's next.
 - Claim a task by adding an entry to `HANDOFF.md`:
@@ -877,11 +876,10 @@ startup script if your Codex setup supports one.)
 
 ## Codex specific
 - Use the Superpowers skills for any multi-step task, same as Claude
-  Code. Superpowers owns `.superpowers/sdd/<plan-name>/` and
-  `docs/superpowers/` — don't hand-edit these or create files there
-  yourself; that's the tool's job. Before starting work, check
-  `.superpowers/sdd/` for active plans and the relevant `progress.md`
-  for current task status.
+  Code. Superpowers owns `.superpowers/sdd/`, `docs/superpowers/` —
+  don't hand-edit these or create files there yourself; that's the
+  tool's job. Before starting work, check Superpowers's own state
+  under those paths for active plans and current task status.
 - Read `HANDOFF.md` to see which agent (Claude Code) last touched each
   plan/task and what's next.
 - Claim a task by adding an entry to `HANDOFF.md`:

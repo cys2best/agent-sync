@@ -241,7 +241,7 @@ files). Fill in this template, substituting:
   registry `displayName`) of every *other* configured agent
 - `{AGENT_ID}` → the agent's id
 
-```markdown
+ ```markdown
 # {AGENT_NAME} Instructions
 
 This file is intentionally thin. All real project knowledge lives in the
@@ -263,18 +263,18 @@ shared files below so other agents see the same thing.
   `.claude/settings.json` does for Claude Code.
 - At the end of a session, append a handoff entry to `HANDOFF.md`: what
   you finished, what's next, and any blockers, per plan.
-```
+ ```
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
 non-empty — one bullet per tool, using its `displayName` and
 `ownedPaths`:
-```
+ ```
 - Use the {TOOL_DISPLAY_NAME} skills for any multi-step task.
   {TOOL_DISPLAY_NAME} owns `{ownedPath1}`, `{ownedPath2}`, ... — don't
   hand-edit these or create files there yourself; that's the tool's
   job. Before starting work, check {TOOL_DISPLAY_NAME}'s own state
   under those paths for active plans and current task status.
-```
+ ```
 (repeat one such bullet per configured workflow tool)
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
@@ -282,13 +282,13 @@ empty — omit the bullet, and the `{WORKFLOW_TOOLS_BLOCK}` placeholder
 line, entirely (don't leave a blank line in its place).
 
 `{IMPORT_BLOCK}`, when `supportsImports` is true:
-```
+ ```
 @docs/PROJECT_CONTEXT.md
 @HANDOFF.md
-```
+ ```
 
 `{IMPORT_BLOCK}`, when `supportsImports` is false:
-```
+ ```
 See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
@@ -296,12 +296,12 @@ See:
 ({AGENT_NAME} doesn't support `@path` imports like Claude Code does —
 read both files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
-```
+ ```
 
 If `HANDOFF.md` doesn't exist, create it — `{AGENT_IDS_PIPE}` is every
 configured agent's id, joined with `|`:
 
-```markdown
+ ```markdown
 # Handoff Log
 
 <!-- Newest entry on top. Each agent appends one entry at session end,
@@ -318,18 +318,18 @@ configured agent's id, joined with `|`:
 \`\`\`
 
 ---
-```
+ ```
 
 If `.claude/settings.json` doesn't exist, create it:
 
-```json
+ ```json
 {
   "attribution": {
     "commit": "",
     "pr": ""
   }
 }
-```
+ ```
 
 ## Step 2 — generate docs/PROJECT_CONTEXT.md from the real project
 
@@ -361,7 +361,7 @@ with what you actually found (leave a section explicitly marked
 "not detected — fill in manually" if you can't determine it from the
 repo, rather than guessing):
 
-```markdown
+ ```markdown
 # Project Context
 
 > Single source of truth for project knowledge. Per-agent context files
@@ -405,12 +405,12 @@ repo, rather than guessing):
 
 `{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}`, when the resolved
 workflow-tool list is non-empty — one line per tool:
-```
+ ```
 - Live execution state (task briefs, reports, progress) is owned by
   {TOOL_DISPLAY_NAME} at `{ownedPath1}`, `{ownedPath2}`, ... — don't
   hand-edit these or create files there yourself; that's the tool's
   job.
-```
+ ```
 (repeat one such line per configured workflow tool)
 
 `{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}`, when the resolved
@@ -534,9 +534,9 @@ grep -q 'agent (Claude Code, Codex)' GEMINI.md && echo "GEMINI.md names both oth
 cat > HANDOFF.md <<'EOF'
 # Handoff Log
 ## Template for new entries
-```
+ ```
 ### YYYY-MM-DD HH:MM — [claude|codex|gemini]
-```
+ ```
 EOF
 grep -q '\[claude|codex|gemini\]' HANDOFF.md && echo "HANDOFF.md claim tag lists all three: OK"
 ```

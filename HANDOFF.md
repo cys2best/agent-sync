@@ -17,8 +17,8 @@
 
 ### 2026-08-29 17:38 — codex
 - Claiming: 2026-08-29-agent-sync-workflow-policy/task-0
-- Finished: 2026-08-29-agent-sync-workflow-policy/task-0
-- Next: user review of the workflow-enforcement and commit-convention design spec
+- Finished: 2026-08-29-agent-sync-workflow-policy/task-0 (design and implementation plan)
+- Next: task-1 is ready; execute it through Superpowers SDD so its brief, report, and progress are generated
 - Blockers: none
 
 ### 2026-08-29 16:50 — codex

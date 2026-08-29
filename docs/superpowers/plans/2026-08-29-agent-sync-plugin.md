@@ -784,8 +784,10 @@ Expected: file removed.
 
 Run: `grep -o '`[a-zA-Z0-9_./-]*\.md`\|`[a-zA-Z0-9_./-]*\.json`' README.md | tr -d '`' | sort -u`
 Expected output includes only paths that exist or will exist after this
-plan: `AGENTS.md`, `CLAUDE.md` are not listed (correct — README
-describes them generically, doesn't hardcode them); `LICENSE`,
+plan: `AGENTS.md` and `CLAUDE.md` are expected too (the "What this
+solves" section names them by example — that's fine, they're real
+filenames created by Task 2's command, not a hardcoded assumption about
+this specific project's agent list); `LICENSE`,
 `docs/PROJECT_CONTEXT.md`, `HANDOFF.md`, `registry/agents.json`,
 `registry/workflow-tools.json`, `.agent-sync.json`,
 `.claude/settings.json` should each appear and each is created by Task

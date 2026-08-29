@@ -497,7 +497,7 @@ startup script if your setup supports one.)
   `Claiming plan-name/task-N — codex`
 EOF
 grep -q '@docs/PROJECT_CONTEXT.md' CLAUDE.md && echo "CLAUDE.md has import block: OK"
-grep -qv '@docs/PROJECT_CONTEXT.md' AGENTS.md && echo "AGENTS.md has no import syntax: OK"
+grep -q '@docs/PROJECT_CONTEXT.md' AGENTS.md || echo "AGENTS.md has no import syntax: OK"
 grep -q 'agent (Codex)' CLAUDE.md && echo "CLAUDE.md names Codex as other agent: OK"
 grep -q 'agent (Claude Code)' AGENTS.md && echo "AGENTS.md names Claude Code as other agent: OK"
 ```
@@ -1035,15 +1035,22 @@ Run: `git status --short`
 Expected: no output (empty — everything from Tasks 1-4 was committed at
 the end of its own task).
 
-- [ ] **Step 3: Confirm commit history reflects one commit per task, on top of the pre-execution commits**
+- [ ] **Step 3: Confirm commit history has exactly one commit per task, correctly tagged**
 
-Run: `git log --oneline | cat`
-Expected: exactly 4 commits newer than `a508bc3` ("Fix expected commit
-count..."), one each for Task 1, Task 2, Task 3, Task 4 (oldest to
-newest in that order) — i.e. 8 commits total in the full log. Don't
-hardcode this total again in any future edit to this plan file itself;
-count from `a508bc3` forward instead, since editing the plan adds
-another pre-execution commit each time.
+Run:
+```bash
+for n in 1 2 3 4; do
+  count=$(git log --oneline --grep="^\[2026-08-29-agent-sync-plugin/task-$n\]" -E | wc -l | tr -d ' ')
+  echo "task-$n: $count commit(s)"
+done
+```
+Expected: `task-1: 1 commit(s)`, `task-2: 1 commit(s)`, `task-3: 1
+commit(s)`, `task-4: 1 commit(s)` (a task whose implementer needed a fix
+round may have amended rather than added a commit — 1 is still correct
+in that case; more than 1 per task, or 0 for any task, is a defect to
+investigate). This check is structural (greps commit message prefixes)
+rather than an exact total-log-count, specifically so further edits to
+this plan file's own commit history never invalidate it again.
 
 - [ ] **Step 4: Report completion**
 

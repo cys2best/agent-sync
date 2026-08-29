@@ -19,6 +19,12 @@ Plan/task identifiers belong here and in workflow state, not in commit subjects.
 
 ---
 
+### 2026-08-30 03:08 — codex
+- Claiming: 2026-08-30-agent-sync-effective-config-fix/task-0
+- Finished: none yet
+- Next: write and execute the corrective SDD plan for first-run effective configuration
+- Blockers: none
+
 ### 2026-08-30 01:58 — codex
 - Claiming: 2026-08-29-agent-sync-workflow-policy/task-5
 - Finished: 2026-08-29-agent-sync-workflow-policy/task-5 (managed documentation and dogfood migration)

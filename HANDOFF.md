@@ -15,6 +15,12 @@
 
 ---
 
+### 2026-08-29 17:38 — codex
+- Claiming: 2026-08-29-agent-sync-workflow-policy/task-0
+- Finished: 2026-08-29-agent-sync-workflow-policy/task-0
+- Next: user review of the workflow-enforcement and commit-convention design spec
+- Blockers: none
+
 ### 2026-08-29 16:50 — codex
 - Claiming: 2026-08-29-agent-sync-plugin/task-5
 - Finished: 2026-08-29-agent-sync-plugin/task-5; re-verified task-4

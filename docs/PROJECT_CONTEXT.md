@@ -31,7 +31,14 @@ sync, without duplicating anything Superpowers already owns.
 
 ## Conventions
 - Branch naming: not detected — fill in manually if adopted
-- Commit message format: `[plan-name/task-N] short description`
+<!-- agent-sync:project-policy:start -->
+- Commit message format: `<type>(optional-scope): imperative description`
+- Commit convention source: Conventional Commits fallback
+- Commit examples: `feat(scaffold): enforce workflow execution`; `fix(policy): preserve unmanaged content`
+- Live execution state (task briefs, reports, progress, and reviews) is owned by
+  Superpowers at `.superpowers/sdd/`, `docs/superpowers/`. Never edit those
+  artifacts outside the applicable Superpowers workflow.
+<!-- agent-sync:project-policy:end -->
 - Code style notes: plain Markdown for commands/docs, plain JSON
   (2-space indent) for plugin/registry/config files
 - Things NOT to do: don't hand-edit `.superpowers/sdd/` or
@@ -42,10 +49,6 @@ sync, without duplicating anything Superpowers already owns.
   code changes
 
 ## Plan & spec structure
-- Live execution state (task briefs, reports, progress) is owned by
-  Superpowers at `.superpowers/sdd/<plan-name>/` and
-  `docs/superpowers/` — don't hand-edit these or create files there
-  yourself; that's the tool's job.
 - Multiple plans can be active at once. See HANDOFF.md for which agent
   owns which plan/task right now.
 

@@ -1,8 +1,11 @@
 # Handoff Log
 
+<!-- agent-sync:handoff-template:start -->
 <!-- Newest entry on top. Each agent appends one entry at session end,
      and one "Claiming" line when picking up a task. Multiple plans can
      appear here at once — always include the plan name. -->
+
+Plan/task identifiers belong here and in workflow state, not in commit subjects.
 
 ## Template for new entries
 ```
@@ -12,8 +15,21 @@
 - Next: plan-name/task-K is ready, depends on plan-name/task-N
 - Blockers: none / describe
 ```
+<!-- agent-sync:handoff-template:end -->
 
 ---
+
+### 2026-08-30 01:58 — codex
+- Claiming: 2026-08-29-agent-sync-workflow-policy/task-5
+- Finished: 2026-08-29-agent-sync-workflow-policy/task-5 (managed documentation and dogfood migration)
+- Next: 2026-08-29-agent-sync-workflow-policy/task-6 is ready for integrated verification
+- Blockers: none
+
+### 2026-08-30 01:55 — codex
+- Claiming: 2026-08-29-agent-sync-workflow-policy/task-5
+- Finished: none yet
+- Next: migrate dogfood documentation and record verification evidence
+- Blockers: none
 
 ### 2026-08-29 17:59 — codex
 - Claiming: 2026-08-29-agent-sync-workflow-policy/task-1

@@ -50,7 +50,10 @@ repo (package manifests, lockfiles, README, test/lint config, git log,
 `.gitignore`) and writes real content into `docs/PROJECT_CONTEXT.md`
 instead of a blank template.
 
-Re-running is safe — existing files are left untouched.
+Re-running is safe. Generated policy is confined to managed blocks, so a
+rerun replaces only those blocks and preserves surrounding content. It safely
+migrates only recognized historical renderings; unrecognized or malformed
+files are left for review rather than overwritten.
 
 ## Workflow
 
@@ -59,12 +62,24 @@ Re-running is safe — existing files are left untouched.
    Claude Code, do this automatically).
 2. Claim a task by adding a line to `HANDOFF.md`:
    `Claiming plan-name/task-N — <agent-id>`.
-3. Use Superpowers as normal — it manages `.superpowers/sdd/<plan-name>/`
-   and `docs/superpowers/` entirely on its own; this plugin never
-   touches those.
-4. Commit with `[plan-name/task-N] description` — no agent name in the
-   commit message itself.
-5. At session end, append a handoff entry to `HANDOFF.md`.
+3. Before plan-scoped work, inspect each configured workflow's activation
+   signals and owned state. If a task is activated, follow that workflow's
+   official lifecycle, including final verification and its report. Never
+   substitute a manual path or edit the workflow-owned state; if the workflow
+   cannot be invoked, stop and report the blocker.
+4. The workflow registry supplies `activationSignals` and
+   `executionInstructions`. Older custom workflow entries without both fields
+   use the strict generic fallback: inspect owned state, use the tool's
+   official lifecycle, and stop if it is unavailable.
+5. Commit policy is detected locally in priority order: commitlint,
+   `COMMIT_CONVENTION.md`, contributing guidance, a local commit template,
+   then sufficiently consistent history. Otherwise use the Conventional
+   Commits fallback: `<type>(optional-scope): imperative description`.
+   Plan and task IDs stay in `HANDOFF.md` and workflow state, not commit
+   subjects.
+6. Every SDD task, including final verification, needs its
+   workflow-generated brief and report.
+7. At session end, append a handoff entry to `HANDOFF.md`.
 
 ## Notes
 

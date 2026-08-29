@@ -1,6 +1,6 @@
 ---
 description: Scaffold per-agent context files (CLAUDE.md/AGENTS.md/...), HANDOFF.md, and docs/PROJECT_CONTEXT.md so multiple coding agents share project context, based on a project-local .agent-sync.json agent + workflow-tool list.
-allowed-tools: Bash, Read, Glob, Grep, Write
+allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 ---
 
 ## Step 0 — determine the agent list and workflow tools
@@ -118,9 +118,38 @@ order:
 For registry workflows and complete custom workflows, preserve every
 `executionInstructions` item verbatim and in registry/custom-object order.
 
-If an agent's resolved `contextFile` does not already exist, create it
-(leave it untouched if it does — this command never overwrites existing
-files). Fill in this template, substituting:
+For every resolved agent `contextFile`, `HANDOFF.md`, and
+`docs/PROJECT_CONTEXT.md`, construct its proposed managed block, then classify
+every target and collect all approvals before changing any target:
+- `missing`: path does not exist.
+- `managed`: exactly one non-nested matching marker pair exists.
+- `known-legacy`: no markers exist and the file exactly matches the released
+  0.1.0 generated structure: expected title/import variant plus the exact thin
+  context, handoff claim, workflow ownership, commit, attribution, and session
+  handoff paragraphs, with no additional sections or text.
+- `unrecognized`: existing unmarked content that is not exact known legacy.
+- `malformed`: one marker missing, duplicate markers, end before start, or any
+  nested managed marker.
+
+The expected `known-legacy` structure applies to per-agent context files; an
+unmarked `HANDOFF.md` or `docs/PROJECT_CONTEXT.md` is `unrecognized` unless it
+has its own matching managed markers. A matching pair is the marker type for
+that target: `agent-policy`, `handoff-template`, or `project-policy`.
+
+For each classification, use this behavior after all approvals have been
+collected:
+- `missing`: create the file with its managed block.
+- `managed`: replace the matching markers and all bytes between them; preserve
+  every byte before and after.
+- `known-legacy`: replace the recognized legacy content with the managed block
+  and report automatic migration.
+- `unrecognized`: show the proposed block and ask before inserting it. On yes,
+  insert after a top-level title, otherwise at byte zero. On no, preserve the
+  file byte-for-byte and continue with other approved targets.
+- `malformed`: preserve the file, report the exact defect, and never guess or
+  ask to overwrite it.
+
+For an agent `contextFile`, fill the managed block below, substituting:
 - `{AGENT_NAME}` → the agent's `displayName`
 - `{IMPORT_BLOCK}` → see below
 - `{WORKFLOW_TOOLS_BLOCK}` → see below
@@ -131,6 +160,7 @@ files). Fill in this template, substituting:
 ```markdown
 # {AGENT_NAME} Instructions
 
+<!-- agent-sync:agent-policy:start -->
 This file is intentionally thin. All real project knowledge lives in the
 shared files below so other agents see the same thing.
 
@@ -154,7 +184,13 @@ shared files below so other agents see the same thing.
   `.claude/settings.json` does for Claude Code.
 - At the end of a session, append a handoff entry to `HANDOFF.md`: what
   you finished, what's next, and any blockers, per plan.
+<!-- agent-sync:agent-policy:end -->
 ```
+
+Keep `# {AGENT_NAME} Instructions` outside the markers. The start marker
+immediately precedes the shared-context pointer/import block, and the end
+marker immediately follows the session-handoff rule. Do not create an empty
+user section after the block.
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
 non-empty — one bullet per tool, using its `displayName`,
@@ -199,12 +235,17 @@ read both files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
 ```
 
-If `HANDOFF.md` doesn't exist, create it — `{AGENT_IDS_PIPE}` is every
-configured agent's id, joined with `|`:
+For a missing `HANDOFF.md`, `{AGENT_IDS_PIPE}` is every configured agent's id,
+joined with `|`. Render the title, then the exact managed block around its
+explanatory comment and template. Close the managed block before `---`; real
+handoff entries remain outside the block. For a managed or approved
+unrecognized file, replace or insert only this block and preserve every real
+entry outside it:
 
 ```markdown
 # Handoff Log
 
+<!-- agent-sync:handoff-template:start -->
 <!-- Newest entry on top. Each agent appends one entry at session end,
      and one "Claiming" line when picking up a task. Multiple plans can
      appear here at once — always include the plan name. -->
@@ -217,6 +258,7 @@ configured agent's id, joined with `|`:
 - Next: plan-name/task-K is ready, depends on plan-name/task-N
 - Blockers: none / describe
 \`\`\`
+<!-- agent-sync:handoff-template:end -->
 
 ---
 ```
@@ -234,11 +276,10 @@ If `.claude/settings.json` doesn't exist, create it:
 
 ## Step 2 — generate docs/PROJECT_CONTEXT.md from the real project
 
-If `docs/PROJECT_CONTEXT.md` already exists, skip this step and just
-report that it was left untouched.
-
-Otherwise, inspect this repository yourself before writing anything —
-do not use placeholder text:
+For a missing `docs/PROJECT_CONTEXT.md`, inspect this repository yourself
+before writing anything — do not use placeholder text. For a managed or
+approved unrecognized file, preserve every byte outside the `project-policy`
+markers while replacing or inserting only that block:
 
 - Read package.json / pyproject.toml / Cargo.toml / go.mod / Gemfile
   (whichever exists) to identify the language, framework, and package
@@ -287,7 +328,12 @@ repo, rather than guessing):
 
 ## Conventions
 - Branch naming: <!-- inferred from git log, or "not detected" -->
-- Commit message format: `[plan-name/task-N] short description`
+<!-- agent-sync:project-policy:start -->
+- Commit message format: {COMMIT_FORMAT}
+- Commit convention source: {COMMIT_SOURCE}
+- Commit examples: `{COMMIT_EXAMPLE_1}`; `{COMMIT_EXAMPLE_2}`
+{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
+<!-- agent-sync:project-policy:end -->
 - Code style notes:
 - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
 
@@ -303,6 +349,10 @@ repo, rather than guessing):
 <!-- Promote real decisions here as they're made. Newest on top. -->
 - YYYY-MM-DD:
 \`\`\`
+
+The `project-policy` block is inside `## Conventions`. Keep branch naming,
+code style, technical context, architecture, and decisions outside this managed
+block.
 
 `{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}`, when the resolved
 workflow-tool list is non-empty — one line per tool:

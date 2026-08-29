@@ -1,7 +1,7 @@
 {
   "name": "agent-sync",
   "description": "Keep multiple coding agents (Claude Code, Codex, and others) in sync on shared project context and task handoff, without duplicating what Superpowers already owns.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": {
     "name": "cys2best"
   },

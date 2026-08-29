@@ -1035,14 +1035,15 @@ Run: `git status --short`
 Expected: no output (empty — everything from Tasks 1-4 was committed at
 the end of its own task).
 
-- [ ] **Step 3: Confirm commit history reflects one commit per task plus the earlier spec commits**
+- [ ] **Step 3: Confirm commit history reflects one commit per task, on top of the pre-execution commits**
 
-Run: `git log --oneline`
-Expected: 7 commits total, newest first — one for Task 4, one for Task
-3, one for Task 2, one for Task 1, one for this plan document (commit
-`83868f6`), one for the workflow-tools spec addendum (commit
-`44641f5`), and one for the original spec (from brainstorming, root
-commit `ed10454`).
+Run: `git log --oneline | cat`
+Expected: exactly 4 commits newer than `a508bc3` ("Fix expected commit
+count..."), one each for Task 1, Task 2, Task 3, Task 4 (oldest to
+newest in that order) — i.e. 8 commits total in the full log. Don't
+hardcode this total again in any future edit to this plan file itself;
+count from `a508bc3` forward instead, since editing the plan adds
+another pre-execution commit each time.
 
 - [ ] **Step 4: Report completion**
 

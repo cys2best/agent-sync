@@ -250,8 +250,11 @@ shared files below so other agents see the same thing.
   required verification and report. Never finish the task outside that workflow.
 - Claim a task by adding an entry to `HANDOFF.md`:
   `Claiming plan-name/task-N — {AGENT_ID}`
-- Commit messages must include the plan-scoped task ID only, no agent
-  name: `[plan-name/task-N] description`
+- Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
+  names a repository policy file, read that source too. Follow its format and
+  examples. Keep plan names, task numbers, agent identity, and AI-attribution
+  out of the commit message; workflow state and `HANDOFF.md` retain task
+  traceability.
 - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
   commits or PRs. If this agent's setup has an equivalent
   auto-attribution behavior, disable it the same way
@@ -324,6 +327,8 @@ entry outside it:
      and one "Claiming" line when picking up a task. Multiple plans can
      appear here at once — always include the plan name. -->
 
+Plan/task identifiers belong here and in workflow state, not in commit subjects.
+
 ## Template for new entries
 \`\`\`
 ### YYYY-MM-DD HH:MM — [{AGENT_IDS_PIPE}]
@@ -367,10 +372,36 @@ markers while replacing or inserting only that block:
 - Look at the top-level directory layout and note the architecture at a
   glance (e.g. "monorepo with apps/ and packages/", "Django app with
   standard app-per-feature layout").
-- Check for an existing branch-naming or commit-convention pattern in
-  `git log` (last ~20 commits) rather than inventing one.
 - Note any obvious "don't touch" paths (generated dirs, vendored code,
   build output) from .gitignore.
+
+Before target rendering, detect commit policy from local evidence only:
+
+1. Inspect commitlint files and `package.json` commitlint config.
+2. Inspect `COMMIT_CONVENTION.md` and case-insensitive filename variants.
+3. Inspect `CONTRIBUTING.md` and `.github/CONTRIBUTING.md`.
+4. Run `git config --local commit.template`; inspect a repository-readable
+   template it names.
+5. Otherwise inspect the latest 50 non-merge subjects. Infer a format only from
+   at least five subjects when at least 70 percent match one recognizable
+   subject pattern.
+6. Otherwise select Conventional Commits fallback:
+   `<type>(optional-scope): imperative description`.
+
+If explicit sources conflict, show them and ask which governs before writes.
+Do not use remote, global, or personal Git configuration as evidence. Inspect
+only commit subjects; never copy commit-body secrets or attribution.
+
+The Conventional Commits fallback types are `feat`, `fix`, `docs`, `refactor`,
+`test`, `build`, `ci`, and `chore`. Features use `feat`; hotfixes use `fix`.
+
+Define the following values before rendering the `project-policy` block:
+
+- `{COMMIT_FORMAT}` is the concise subject grammar.
+- `{COMMIT_SOURCE}` is a repository-relative source path, `git history`, or
+  `Conventional Commits fallback`.
+- `{COMMIT_EXAMPLE_1}` and `{COMMIT_EXAMPLE_2}` are safe examples from the
+  source, or newly written examples that obey the selected format.
 
 Then create `docs/PROJECT_CONTEXT.md` with this structure, filled in
 with what you actually found (leave a section explicitly marked

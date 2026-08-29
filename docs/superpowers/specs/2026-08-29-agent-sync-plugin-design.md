@@ -35,6 +35,7 @@ commands/
   scaffold-shared-context.md   # generalized, config+registry driven
 registry/
   agents.json           # built-in known agents: claude, codex, gemini, cursor
+  workflow-tools.json   # built-in known workflow/plan tools: superpowers
 README.md
 LICENSE                 # MIT
 CLAUDE.md
@@ -57,10 +58,10 @@ instructions are replaced by install instructions in `README.md`.
 
 ```json
 {
-  "claude":  { "contextFile": "CLAUDE.md",  "supportsImports": true  },
-  "codex":   { "contextFile": "AGENTS.md",  "supportsImports": false },
-  "gemini":  { "contextFile": "GEMINI.md",  "supportsImports": false },
-  "cursor":  { "contextFile": "AGENTS.md",  "supportsImports": false }
+  "claude":  { "displayName": "Claude Code", "contextFile": "CLAUDE.md",  "supportsImports": true  },
+  "codex":   { "displayName": "Codex",       "contextFile": "AGENTS.md",  "supportsImports": false },
+  "gemini":  { "displayName": "Gemini",      "contextFile": "GEMINI.md",  "supportsImports": false },
+  "cursor":  { "displayName": "Cursor",      "contextFile": "AGENTS.md",  "supportsImports": false }
 }
 ```
 
@@ -74,14 +75,47 @@ Codex and Cursor share `AGENTS.md` — if both are enabled for a project,
 the scaffold command writes `AGENTS.md` once and lists both agent names
 in its "other agents" note rather than producing a duplicate file.
 
+## Built-in workflow-tool registry
+
+The prototype hardcoded Superpowers as *the* plan/task-execution-state
+owner (`.superpowers/sdd/<plan-name>/`, `docs/superpowers/` — never
+hand-edited, always called out by name in every generated context
+file). That doesn't generalize: a project might use a different
+planning/workflow tool with its own owned state directories, or none at
+all. This is the same shape problem as the agent list, so it gets the
+same fix: a second built-in registry.
+
+`registry/workflow-tools.json`, shipped with the plugin, read via
+`${CLAUDE_PLUGIN_ROOT}/registry/workflow-tools.json`:
+
+```json
+{
+  "superpowers": {
+    "displayName": "Superpowers",
+    "ownedPaths": [".superpowers/sdd/", "docs/superpowers/"]
+  }
+}
+```
+
+`ownedPaths` are directories the scaffold command and every generated
+agent context file must never instruct an agent to hand-edit — they're
+that tool's own generated output.
+
 ## Project-local config
 
 `.agent-sync.json`, written into the *consumer* repo (not shipped, one
 per project using the plugin):
 
 ```json
-{ "agents": ["claude", "codex"] }
+{ "agents": ["claude", "codex"], "workflowTools": ["superpowers"] }
 ```
+
+`workflowTools` is optional; when omitted it defaults to
+`["superpowers"]` (matches the prototype's only-ever-hardcoded
+behavior, so existing configs — like this repo's own — don't need
+edits). An empty list (`"workflowTools": []`) means no workflow tool is
+in use — the generated context files omit the "don't hand-edit" section
+entirely.
 
 Custom/unlisted agents are supported inline:
 
@@ -94,6 +128,16 @@ Custom/unlisted agents are supported inline:
 }
 ```
 
+Custom/unlisted workflow tools follow the same inline-object pattern:
+
+```json
+{
+  "workflowTools": [
+    { "id": "myplanner", "displayName": "My Planner", "ownedPaths": [".myplanner/state/"] }
+  ]
+}
+```
+
 ## Command flow — `commands/scaffold-shared-context.md`
 
 Step 1 moves from a static bash heredoc (which only worked because the
@@ -102,8 +146,10 @@ now dynamic per configured agent list:
 
 1. If `.agent-sync.json` is missing in the target repo: scan for hints
    (existing `AGENTS.md`, `GEMINI.md`, etc.), ask the user which agents
-   to enable (registry defaults, plus freeform custom entries), write
-   `.agent-sync.json`.
+   to enable (registry defaults, plus freeform custom entries) and
+   which workflow tools are in use (registry defaults, hinted by e.g.
+   an existing `.superpowers/` directory; defaulting to `["superpowers"]`
+   if the user has no opinion), write `.agent-sync.json`.
 2. For each configured agent, generate its context file from **one
    generalized template** (not per-agent hardcoded copies) with
    placeholders:
@@ -115,13 +161,18 @@ now dynamic per configured agent list:
    - "other agents" list, derived from the full config so the wording
      is correct for 2 agents or 5 (not "the other agent (Codex)" baked
      in)
+   - a "don't hand-edit" section listing every configured workflow
+     tool's `displayName` and `ownedPaths`, omitted entirely when
+     `workflowTools` is empty — not hardcoded to Superpowers
 3. `HANDOFF.md`'s claiming-line template — previously
    `` `Claiming plan-name/task-N — [claude|codex]` `` — is generated
    from the config's agent id list instead of hardcoded.
 4. `.claude/settings.json` step is unchanged (Claude-Code-specific
    attribution config).
 5. Step 2 (inspect the repo, generate `docs/PROJECT_CONTEXT.md`) is
-   unchanged from the prototype.
+   unchanged from the prototype, except the "Plan & spec structure"
+   section is generated per configured workflow tool instead of
+   hardcoded to Superpowers.
 
 Idempotency is preserved: existing files are left untouched, same as the
 prototype.
@@ -132,7 +183,9 @@ prototype.
 repo root as this project's own coordination files — the plugin dev
 workflow uses the tool it's building, on itself. They get regenerated
 from the new generalized template with `.agent-sync.json` set to
-`["claude", "codex"]`.
+`{ "agents": ["claude", "codex"], "workflowTools": ["superpowers"] }`
+(this project genuinely uses Superpowers for its own dev workflow, so
+this is real configuration, not a placeholder).
 
 ## Naming / metadata
 
@@ -151,6 +204,10 @@ from the new generalized template with `.agent-sync.json` set to
   "other agents" and `HANDOFF.md` template reflects all three ids.
 - Run with a custom unlisted agent entry — confirm it generates
   correctly without registry support.
+- Run with `workflowTools` omitted — confirm it defaults to
+  `["superpowers"]` and generated files read the same as the prototype.
+- Run with `"workflowTools": []` — confirm the "don't hand-edit" section
+  is omitted from every generated context file.
 - Re-run against a repo where files already exist — confirm nothing is
   overwritten (idempotency).
 - Confirm `.claude-plugin/plugin.json` and `marketplace.json` validate

@@ -169,9 +169,9 @@ non-empty — one bullet per tool, using its `displayName`,
   workflow cannot be invoked, stop and report the blocker.
 ```
 Continue numbering until every resolved instruction has been rendered verbatim.
-Preserve instruction order. If the final resolved instruction already says to
-stop and report the blocker when the workflow is unavailable, omit the
-equivalent final blocker sentence from the rendering; otherwise retain it.
+Preserve instruction order. If any resolved instruction already says to stop
+and report the blocker when the workflow is unavailable, omit the equivalent
+final blocker sentence from the rendering; otherwise retain it.
 Repeat one such bullet per configured workflow tool. For a `generic strict
 fallback`, include the label `generic strict fallback` with that tool's bullet
 and report that tool-specific activation and resume guidance was not

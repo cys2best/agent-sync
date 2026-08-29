@@ -949,9 +949,9 @@ sync, without duplicating anything Superpowers already owns.
 
 ## Plan & spec structure
 - Live execution state (task briefs, reports, progress) is owned by
-  Superpowers at `.superpowers/sdd/<plan-name>/` and
-  `docs/superpowers/` — don't hand-edit these or create files there
-  yourself; that's the tool's job.
+  Superpowers at `.superpowers/sdd/`, `docs/superpowers/` — don't
+  hand-edit these or create files there yourself; that's the tool's
+  job.
 - Multiple plans can be active at once. See HANDOFF.md for which agent
   owns which plan/task right now.
 

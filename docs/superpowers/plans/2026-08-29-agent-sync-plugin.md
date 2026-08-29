@@ -1045,10 +1045,13 @@ for n in 1 2 3 4; do
 done
 ```
 Expected: `task-1: 1 commit(s)`, `task-2: 1 commit(s)`, `task-3: 1
-commit(s)`, `task-4: 1 commit(s)` (a task whose implementer needed a fix
-round may have amended rather than added a commit — 1 is still correct
-in that case; more than 1 per task, or 0 for any task, is a defect to
-investigate). This check is structural (greps commit message prefixes)
+commit(s)`, `task-4: 2 commit(s)` (a task whose implementer needed a
+fix round may have amended rather than added a commit — 1 is still
+correct in that case, and Task 4 legitimately has 2 separate commits:
+one for the regenerated dogfood files, one for tracking `HANDOFF.md`
+into git for the first time. 0 for any task is a defect to investigate;
+an unexplained extra commit for tasks 1-3 is too). This check is
+structural (greps commit message prefixes)
 rather than an exact total-log-count, specifically so further edits to
 this plan file's own commit history never invalidate it again.
 

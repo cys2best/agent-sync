@@ -123,10 +123,8 @@ For every resolved agent `contextFile`, `HANDOFF.md`, and
 every target and collect all approvals before changing any target:
 - `missing`: path does not exist.
 - `managed`: exactly one non-nested matching marker pair exists.
-- `known-legacy`: no markers exist and the file exactly matches the released
-  0.1.0 generated structure: expected title/import variant plus the exact thin
-  context, handoff claim, workflow ownership, commit, attribution, and session
-  handoff paragraphs, with no additional sections or text.
+- `known-legacy`: no markers exist and the file is byte-for-byte equal to one
+  of the two supported released 0.1.0 per-agent render variants below.
 - `unrecognized`: existing unmarked content that is not exact known legacy.
 - `malformed`: one marker missing, duplicate markers, end before start, or any
   nested managed marker.
@@ -135,6 +133,82 @@ The expected `known-legacy` structure applies to per-agent context files; an
 unmarked `HANDOFF.md` or `docs/PROJECT_CONTEXT.md` is `unrecognized` unless it
 has its own matching managed markers. A matching pair is the marker type for
 that target: `agent-policy`, `handoff-template`, or `project-policy`.
+
+For the two supported legacy variants, compare the entire target file to the
+literal contents below, including the single final LF after the last line. Do
+not substitute agent names, imports, other-agent names, attribution wording,
+or workflow text. These fixed compatibility fixtures are the historical
+renders from commit `dde76e9`:
+
+### Supported 0.1.0 Claude import variant (`CLAUDE.md` only)
+
+```markdown
+# Claude Code Instructions
+
+This file is intentionally thin. All real project knowledge lives in the
+shared files below so other agents see the same thing.
+
+@docs/PROJECT_CONTEXT.md
+@HANDOFF.md
+
+## Claude Code specific
+- Use the Superpowers skills for any multi-step task. Superpowers owns
+  `.superpowers/sdd/`, `docs/superpowers/` — don't hand-edit these or
+  create files there yourself; that's the tool's job. Before starting
+  work, check Superpowers's own state under those paths for active
+  plans and current task status.
+- Read `HANDOFF.md` to see which agent (Codex) last touched each
+  plan/task and what's next.
+- Claim a task by adding an entry to `HANDOFF.md`:
+  `Claiming plan-name/task-N — claude`
+- Commit messages must include the plan-scoped task ID only, no agent
+  name: `[plan-name/task-N] description`
+- Do not add a "Co-Authored-By" trailer or "Generated with Claude Code"
+  footer to commits or PRs (also enforced by `.claude/settings.json`
+  `attribution` config — this line is a backup in case that file is
+  missing or overridden locally).
+- At the end of a session, append a handoff entry to `HANDOFF.md`: what
+  you finished, what's next, and any blockers, per plan.
+```
+
+### Supported 0.1.0 Codex no-import variant (`AGENTS.md` only)
+
+```markdown
+# Codex Instructions
+
+This file is intentionally thin. All real project knowledge lives in the
+shared files below so other agents see the same thing.
+
+See:
+- docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
+- HANDOFF.md — the running log between agents, per plan/task
+
+(Codex doesn't support `@path` imports like Claude Code does — read both
+files above manually at the start of every session, or wire this into a
+startup script if your Codex setup supports one.)
+
+## Codex specific
+- Use the Superpowers skills for any multi-step task, same as Claude
+  Code. Superpowers owns `.superpowers/sdd/`, `docs/superpowers/` —
+  don't hand-edit these or create files there yourself; that's the
+  tool's job. Before starting work, check Superpowers's own state
+  under those paths for active plans and current task status.
+- Read `HANDOFF.md` to see which agent (Claude Code) last touched each
+  plan/task and what's next.
+- Claim a task by adding an entry to `HANDOFF.md`:
+  `Claiming plan-name/task-N — codex`
+- Commit messages must include the plan-scoped task ID only, no agent
+  name: `[plan-name/task-N] description`
+- Do not add a "Co-Authored-By" trailer or similar AI-attribution footer
+  to commits or PRs. If your Codex setup has an equivalent auto-attribution
+  behavior, disable it in its config the same way `.claude/settings.json`
+  does for Claude Code.
+- At the end of a session, append a handoff entry to `HANDOFF.md`: what
+  you finished, what's next, and any blockers, per plan.
+```
+
+Any byte difference or unsupported legacy shape is `unrecognized`, never
+automatic migration.
 
 For each classification, use this behavior after all approvals have been
 collected:
@@ -338,7 +412,6 @@ repo, rather than guessing):
 - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
 
 ## Plan & spec structure
-{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
 - Multiple plans can be active at once. See HANDOFF.md for which agent
   owns which plan/task right now.
 
@@ -354,8 +427,8 @@ The `project-policy` block is inside `## Conventions`. Keep branch naming,
 code style, technical context, architecture, and decisions outside this managed
 block.
 
-`{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}`, when the resolved
-workflow-tool list is non-empty — one line per tool:
+The workflow ownership line inside the `project-policy` block, when the
+resolved workflow-tool list is non-empty — one line per tool:
 ```
 - Live execution state (task briefs, reports, progress) is owned by
   {TOOL_DISPLAY_NAME} at `{ownedPath1}`, `{ownedPath2}`, ... — don't
@@ -364,9 +437,9 @@ workflow-tool list is non-empty — one line per tool:
 ```
 (repeat one such line per configured workflow tool)
 
-`{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}`, when the resolved
-workflow-tool list is empty — omit entirely, and drop the "Plan & spec
-structure" heading down to just the "Multiple plans..." line.
+When the resolved workflow-tool list is empty, omit the workflow ownership
+line from the `project-policy` block. Keep the `Plan & spec structure` heading
+and its `Multiple plans...` line unchanged.
 
 After writing the file, report which sections you filled from real
 project signals vs. left as "not detected", and remind the user to

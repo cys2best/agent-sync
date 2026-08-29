@@ -1038,10 +1038,11 @@ the end of its own task).
 - [ ] **Step 3: Confirm commit history reflects one commit per task plus the earlier spec commits**
 
 Run: `git log --oneline`
-Expected: 6 commits total, newest first — one for Task 4, one for Task
-3, one for Task 2, one for Task 1, one for the workflow-tools spec
-addendum (commit `44641f5`), and one for the original spec (from
-brainstorming, root commit `ed10454`).
+Expected: 7 commits total, newest first — one for Task 4, one for Task
+3, one for Task 2, one for Task 1, one for this plan document (commit
+`83868f6`), one for the workflow-tools spec addendum (commit
+`44641f5`), and one for the original spec (from brainstorming, root
+commit `ed10454`).
 
 - [ ] **Step 4: Report completion**
 

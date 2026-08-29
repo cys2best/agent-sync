@@ -1,0 +1,6 @@
+{
+  "superpowers": {
+    "displayName": "Superpowers",
+    "ownedPaths": [".superpowers/sdd/", "docs/superpowers/"]
+  }
+}

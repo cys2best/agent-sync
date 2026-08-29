@@ -1,0 +1,22 @@
+{
+  "claude": {
+    "displayName": "Claude Code",
+    "contextFile": "CLAUDE.md",
+    "supportsImports": true
+  },
+  "codex": {
+    "displayName": "Codex",
+    "contextFile": "AGENTS.md",
+    "supportsImports": false
+  },
+  "gemini": {
+    "displayName": "Gemini",
+    "contextFile": "GEMINI.md",
+    "supportsImports": false
+  },
+  "cursor": {
+    "displayName": "Cursor",
+    "contextFile": "AGENTS.md",
+    "supportsImports": false
+  }
+}

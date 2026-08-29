@@ -13,7 +13,8 @@ allowed-tools: Bash, Read, Glob, Grep, Write
      `${CLAUDE_PLUGIN_ROOT}/registry/agents.json` (known agents:
      `displayName`, `contextFile`, `supportsImports`) and
      `${CLAUDE_PLUGIN_ROOT}/registry/workflow-tools.json` (known
-     workflow/plan-execution tools: `displayName`, `ownedPaths`).
+     workflow/plan-execution tools: `displayName`, `ownedPaths`,
+     `activationSignals`, `executionInstructions`).
    - Check the repo root for existing hints: a file matching any
      registry entry's `contextFile` (e.g. an existing `AGENTS.md` or
      `GEMINI.md`) is a signal that agent is already in use here; a
@@ -26,7 +27,15 @@ allowed-tools: Bash, Read, Glob, Grep, Write
    - Ask the user which workflow/plan-execution tools this project
      uses (offer `superpowers` as the default, pre-selected if
      detected; allow zero tools, or a custom tool: id, `displayName`,
-     `ownedPaths`).
+     `ownedPaths`, `activationSignals`, `executionInstructions`). For a
+     custom tool, collect all four fields: `displayName` is the name shown to
+     agents; `ownedPaths` identifies state the tool owns; `activationSignals`
+     identifies repository-relative globs that activate the workflow; and
+     `executionInstructions` is the ordered, tool-specific lifecycle the
+     agent must follow.
+   - Before writing `.agent-sync.json`, resolve and validate every selected
+     workflow using Step 1's pre-write workflow policy. On invalid input,
+     report the workflow id and invalid field and do not write the file.
    - Write `.agent-sync.json` at the repo root:
      ```json
      { "agents": ["claude", "codex"], "workflowTools": ["superpowers"] }
@@ -41,10 +50,24 @@ allowed-tools: Bash, Read, Glob, Grep, Write
          { "id": "myagent", "displayName": "My Agent", "contextFile": "MYAGENT.md", "supportsImports": false }
        ],
        "workflowTools": [
-         { "id": "myplanner", "displayName": "My Planner", "ownedPaths": [".myplanner/state/"] }
+         {
+           "id": "myplanner",
+           "displayName": "My Planner",
+           "ownedPaths": [".myplanner/state/"],
+           "activationSignals": [".myplanner/state/*/progress.json"],
+           "executionInstructions": [
+             "Resume matching tasks with My Planner's official run command.",
+             "Do not edit .myplanner/state directly.",
+             "Stop and report a blocker if My Planner is unavailable."
+           ]
+         }
        ]
      }
      ```
+     For backward compatibility only, an existing custom workflow may omit
+     both `activationSignals` and `executionInstructions`; warn that generic
+     behavior will apply. Do not offer that omission for new first-run
+     collection.
      If the user has no opinion on workflow tools, omit `workflowTools`
      from the file rather than guessing — a missing key defaults to
      `["superpowers"]` (see Step 1), which matches this plugin's own
@@ -63,9 +86,37 @@ in each other's "other agents" note below.
 Resolve the workflow-tool list the same way: read `.agent-sync.json`'s
 `workflowTools` key. If the key is absent, treat it as `["superpowers"]`.
 If present (including `[]`), use it exactly as written — do not default
-an explicit empty list. Resolve each entry's `displayName` and
-`ownedPaths` from the registry (known id) or the object's own fields
-(custom).
+an explicit empty list. Resolve each entry's `displayName`, `ownedPaths`,
+`activationSignals`, and `executionInstructions` from the registry (known id)
+or the object's own fields (custom).
+
+Validate every resolved workflow before changing any file:
+- `displayName` is a non-empty string.
+- `ownedPaths` is a non-empty array of repository-relative paths.
+- When present, `activationSignals` is an array of repository-relative glob
+  strings. Reject absolute paths and any pattern containing a `..` segment.
+- When present, `executionInstructions` is a non-empty array of non-empty
+  strings.
+On failure, report the workflow id and invalid field, then stop before writes.
+
+If a custom workflow has valid `displayName` and `ownedPaths` but omits both new
+fields, keep it backward compatible and label the result `generic strict
+fallback`. Treat every owned path as an activation signal. Require the agent to
+inspect owned state, use the tool's official lifecycle for matching tasks,
+never execute a managed task manually or edit owned state, and stop and report
+the blocker if the tool is unavailable. Report that tool-specific activation
+and resume guidance was not configured. If only one new field is present, stop
+before writes as malformed input.
+
+For a `generic strict fallback`, resolve the rendered instructions in this
+order:
+1. Inspect the workflow's owned state and use its official lifecycle for
+   matching tasks.
+2. Never execute a managed task manually or edit owned state.
+3. If the workflow tool is unavailable, stop and report the blocker.
+
+For registry workflows and complete custom workflows, preserve every
+`executionInstructions` item verbatim and in registry/custom-object order.
 
 If an agent's resolved `contextFile` does not already exist, create it
 (leave it untouched if it does — this command never overwrites existing
@@ -89,6 +140,10 @@ shared files below so other agents see the same thing.
 {WORKFLOW_TOOLS_BLOCK}
 - Read `HANDOFF.md` to see which agent ({OTHER_AGENTS}) last touched
   each plan/task and what's next.
+- Before claiming or executing a plan task, determine whether it belongs to a
+  configured workflow by checking activation signals and owned state. When it
+  does, use that tool's official lifecycle for the whole task, including its
+  required verification and report. Never finish the task outside that workflow.
 - Claim a task by adding an entry to `HANDOFF.md`:
   `Claiming plan-name/task-N — {AGENT_ID}`
 - Commit messages must include the plan-scoped task ID only, no agent
@@ -102,20 +157,30 @@ shared files below so other agents see the same thing.
 ```
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
-non-empty — one bullet per tool, using its `displayName` and
-`ownedPaths`:
+non-empty — one bullet per tool, using its `displayName`,
+`activationSignals`, `ownedPaths`, and resolved instructions:
 ```
-- Use the {TOOL_DISPLAY_NAME} skills for any multi-step task.
-  {TOOL_DISPLAY_NAME} owns `{ownedPath1}`, `{ownedPath2}`, ... — don't
-  hand-edit these or create files there yourself; that's the tool's
-  job. Before starting work, check {TOOL_DISPLAY_NAME}'s own state
-  under those paths for active plans and current task status.
+- Before plan-scoped work, inspect {TOOL_DISPLAY_NAME}'s activation signals
+  ({ACTIVATION_SIGNALS}) and owned state ({OWNED_PATHS}). If the task belongs to
+  that workflow, follow these rules in order:
+  1. {EXECUTION_INSTRUCTION_1}
+  2. {EXECUTION_INSTRUCTION_2}
+  Do not substitute a manual or generic execution path. If the required
+  workflow cannot be invoked, stop and report the blocker.
 ```
-(repeat one such bullet per configured workflow tool)
+Continue numbering until every resolved instruction has been rendered verbatim.
+Preserve instruction order. If the final resolved instruction already says to
+stop and report the blocker when the workflow is unavailable, omit the
+equivalent final blocker sentence from the rendering; otherwise retain it.
+Repeat one such bullet per configured workflow tool. For a `generic strict
+fallback`, include the label `generic strict fallback` with that tool's bullet
+and report that tool-specific activation and resume guidance was not
+configured.
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
-empty — omit the bullet, and the `{WORKFLOW_TOOLS_BLOCK}` placeholder
-line, entirely (don't leave a blank line in its place).
+empty — omit the workflow bullets, the pre-task workflow gate, and the
+`{WORKFLOW_TOOLS_BLOCK}` placeholder line entirely (don't leave a blank line
+in its place).
 
 `{IMPORT_BLOCK}`, when `supportsImports` is true:
 ```

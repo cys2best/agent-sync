@@ -1,1 +1,11 @@
 .claude/scheduled_tasks.lock
+
+# Local outputs generated while dogfooding agent-sync in this source repository.
+/AGENTS.md
+/CLAUDE.md
+/HANDOFF.md
+/docs/PROJECT_CONTEXT.md
+
+# Private development workflow state and design history.
+/.superpowers/
+/docs/superpowers/

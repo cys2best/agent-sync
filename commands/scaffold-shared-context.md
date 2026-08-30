@@ -15,6 +15,15 @@ no writes.
 
 ### 1A — determine the agent list and workflow tools
 
+Define `{EFFECTIVE_CONFIG}` once and use it throughout Phase 1:
+- Existing configuration: parse the existing `.agent-sync.json` bytes into
+  `{EFFECTIVE_CONFIG}` and stage no configuration write.
+- First-run configuration: build `{EFFECTIVE_CONFIG}` directly from the user's
+  validated agent and workflow selections, then serialize that same object as
+  the proposed `.agent-sync.json` bytes for Phase 2; this is the proposed first-run configuration.
+Never read a missing `.agent-sync.json`. Use `{EFFECTIVE_CONFIG}` throughout Phase 1B
+whether its source was existing bytes or the proposed first-run configuration.
+
 1. If `.agent-sync.json` exists at the repo root, read it — it's the
    agent and workflow-tool list for this project, already decided. Skip
    to Phase 1B.
@@ -86,15 +95,15 @@ no writes.
 
 ### 1B — resolve and validate configuration and render static targets
 
-For every agent in `.agent-sync.json`, resolve its `displayName`,
-`contextFile`, and `supportsImports` — from the registry if it's a
+For every agent in `{EFFECTIVE_CONFIG}`'s `agents` array, resolve its
+`displayName`, `contextFile`, and `supportsImports` — from the registry if it's a
 known id, or from the custom object's own fields otherwise. Two agents
 may resolve to the same `contextFile` (Codex and Cursor both default to
 `AGENTS.md`) — render that target once and list every agent mapped to it
 in each other's "other agents" note below.
 
-Resolve the workflow-tool list the same way: read `.agent-sync.json`'s
-`workflowTools` key. If the key is absent, treat it as `["superpowers"]`.
+Resolve the workflow-tool list from `{EFFECTIVE_CONFIG}`'s `workflowTools`
+key. If the key is absent, treat it as `["superpowers"]`.
 If present (including `[]`), use it exactly as written — do not default
 an explicit empty list. Resolve each entry's `displayName`, `ownedPaths`,
 `activationSignals`, and `executionInstructions` from the registry (known id)

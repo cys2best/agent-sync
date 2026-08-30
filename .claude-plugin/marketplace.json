@@ -1,0 +1,16 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-sync",
+  "description": "Keep multiple coding agents in sync on shared project context and task handoff.",
+  "owner": {
+    "name": "cys2best"
+  },
+  "plugins": [
+    {
+      "name": "agent-sync",
+      "description": "Scaffold per-agent context files, HANDOFF.md, and docs/PROJECT_CONTEXT.md so multiple coding agents share project context.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

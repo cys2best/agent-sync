@@ -1,0 +1,16 @@
+{
+  "superpowers": {
+    "displayName": "Superpowers",
+    "ownedPaths": [".superpowers/sdd/", "docs/superpowers/"],
+    "activationSignals": [
+      ".superpowers/sdd/*/progress.md",
+      "docs/superpowers/plans/*.md"
+    ],
+    "executionInstructions": [
+      "When a requested task belongs to an active Superpowers plan, resume it through the applicable Superpowers execution workflow.",
+      "Keep task briefs, reports, progress, reviews, and completion state inside the Superpowers SDD flow.",
+      "Never execute a managed task manually or create or edit Superpowers-owned artifacts directly.",
+      "If the required workflow cannot be invoked, stop and report the blocker."
+    ]
+  }
+}

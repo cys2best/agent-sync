@@ -36,24 +36,48 @@ Add this repo as a marketplace source, then install the plugin:
 In any project, run:
 
 ```
-/scaffold-shared-context
+/agent-sync:setup
 ```
 
-First run: it asks which agents are working this repo (offering
-built-in defaults for Claude Code, Codex, Gemini, and Cursor — see
-`registry/agents.json` — plus support for custom agents) and which
-workflow/plan-execution tools are in use (offering Superpowers by
-default — see `registry/workflow-tools.json` — plus support for none
-or a custom tool), then writes `.agent-sync.json`, one context file per
-agent, `HANDOFF.md`, and `.claude/settings.json`. It then inspects the
-repo (package manifests, lockfiles, README, test/lint config, git log,
-`.gitignore`) and writes real content into `docs/PROJECT_CONTEXT.md`
-instead of a blank template.
+First run: it asks which agents are working this repo (offering built-in
+defaults for Claude Code, Codex, Gemini, and Cursor — see
+`registry/agents.json` — plus support for custom agents), which
+workflow/plan-execution tools are in use (offering Superpowers by default —
+see `registry/workflow-tools.json` — plus support for none or a custom
+tool), and whether to also generate `docs/PROJECT_CONTEXT.md` now. It then
+writes `.agent-sync/config.json`, one context file per agent, `HANDOFF.md`,
+and `.claude/settings.json`.
 
 Re-running is safe. Generated policy is confined to managed blocks, so a
 rerun replaces only those blocks and preserves surrounding content. It safely
 migrates only recognized historical renderings; unrecognized or malformed
-files are left for review rather than overwritten.
+files are left for review rather than overwritten. A pre-existing root
+`.agent-sync.json` from an older install is migrated automatically to
+`.agent-sync/config.json` the first time any agent-sync command runs.
+
+To (re)generate `docs/PROJECT_CONTEXT.md` on its own — for example, after
+declining it during setup, or to refresh it after the repo's tech stack
+changes — run:
+
+```
+/agent-sync:project-context
+```
+
+It inspects the repo (package manifests, lockfiles, README, test/lint
+config, git log, `.gitignore`) and writes real content instead of a blank
+template. Requires `/agent-sync:setup` to have run at least once.
+
+`HANDOFF.md` grows every session. To move finished plans' entries out into
+`.agent-sync/HANDOFF.archive.md` and keep the active log short, run:
+
+```
+/agent-sync:archive-handoff
+```
+
+A plan is considered finished, and its entries archived, once every task it
+ever claimed has a matching `Finished:` line and no entry still lists it
+under `Next:`. Entries that mix a finished plan with a still-open one stay
+in `HANDOFF.md` until both are finished.
 
 ## Workflow
 
@@ -94,7 +118,7 @@ files are left for review rather than overwritten.
   knowledge lives; the per-agent context files are thin pointers —
   don't let them drift into duplicate, conflicting content.
 - Workflow/plan-execution tools (Superpowers by default, or any custom
-  tool listed in `.agent-sync.json`) own their own state paths entirely
+  tool listed in `.agent-sync/config.json`) own their own state paths entirely
   — this plugin doesn't scaffold, own, or instruct agents to write into
   them.
 

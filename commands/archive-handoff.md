@@ -16,47 +16,72 @@ This entire phase is read-only: do not create or modify any file.
 3. Else, stop immediately and report: "No agent-sync configuration found.
    Run `/agent-sync:setup` first." Make no writes.
 
-### 1B — parse HANDOFF.md entries
+### 1B — parse HANDOFF.md and HANDOFF.archive.md entries
 
 Read `HANDOFF.md`. Identify the real, user-appended entries: everything
 after the `<!-- agent-sync:handoff-template:end -->` marker and before the
 end of the file (skip the `---` separator itself; entries follow it). Never
 touch or move anything inside the `agent-sync:handoff-template` markers —
-that's the template, not a real entry.
+that's the template, not a real entry. These are the **move candidates** —
+the only entries that can ever be staged to move in 1D.
 
-Each real entry is one `### YYYY-MM-DD HH:MM — [agent]` block running up to
-(not including) the next `###` heading or end of file. Parse each entry's
-`Claiming:`, `Finished:`, `Next:`, and `Blockers:` lines. Each of these lines
-may list one or more `plan-name/task-N` identifiers, comma-separated. Extract
-every `plan-name` mentioned anywhere in the entry, and record, per plan name:
-every task id that plan's entries ever `Claiming:`, every task id that
-plan's entries ever `Finished:`, and whether any entry mentions that plan in
-a `Next:` line (regardless of task id — a `Next:` mention means there's
-known follow-on work).
+If `.agent-sync/HANDOFF.archive.md` exists, also read it and parse every
+entry in it the same way (there is no template block to skip in this file —
+every entry after its one-line header is real). These are **history-only**:
+they inform which plans are archivable but are never staged to move, never
+duplicated, and never rewritten.
 
-Preserve each entry's original file order (top of file = newest, per the
-template's own convention) — this ordering matters for reconstructing the
-archive in old-to-new order in 1D.
+A plan's archivability is a property of its whole history, not just what
+currently remains in `HANDOFF.md`. Without also consulting the archive, a
+plan whose `Claiming:` entry already moved to the archive in an earlier run
+— while a co-mentioned entry (tangled with a different, still-unfinished
+plan) stayed behind in `HANDOFF.md` — would look like it has no `Claiming:`
+mention at all on every later run, making it falsely un-archivable forever
+even after the other plan finishes. Reading both files avoids this.
+
+Each real entry (in either file) is one `### YYYY-MM-DD HH:MM — [agent]`
+block running up to (not including) the next `###` heading or end of file.
+Parse each entry's `Claiming:`, `Finished:`, `Next:`, and `Blockers:` lines.
+Each of these lines may list one or more `plan-name/task-N` identifiers,
+comma-separated. Extract every `plan-name` mentioned anywhere in the entry,
+and record, per plan name, combined across both files: every task id that
+plan's entries ever `Claiming:`, every task id that plan's entries ever
+`Finished:`, and whether any entry mentions that plan in a `Next:` line
+(regardless of task id — a `Next:` mention means there's known follow-on
+work).
+
+Preserve each entry's original file order (top of file = newest in
+`HANDOFF.md`, oldest-first in `HANDOFF.archive.md`, per each file's own
+convention) — `HANDOFF.md`'s ordering matters for reconstructing the newly
+archived entries in old-to-new order in 1D.
 
 ### 1C — determine archivable plans
 
-A plan name is **archivable** when both hold:
-1. It has at least one `Claiming:` mention somewhere in `HANDOFF.md`, and
+A plan name is **archivable** when both hold, counting entries from
+`HANDOFF.md` and `HANDOFF.archive.md` (if it exists) together:
+1. It has at least one `Claiming:` mention somewhere across both files, and
    every task id it was ever `Claiming:`'d for also appears in some
-   `Finished:` line for that same plan (anywhere in the file, any entry).
-2. No entry mentions that plan in a `Next:` line.
+   `Finished:` line for that same plan (anywhere in either file, any entry).
+2. No entry in either file mentions that plan in a `Next:` line.
 
-A plan with zero `Claiming:` mentions (only ever appearing in `Finished:` or
-`Next:` context) is **not** archivable — leave it in place; don't guess
-whether it's done.
+A plan with zero `Claiming:` mentions across both files (only ever appearing
+in `Finished:` or `Next:` context) is **not** archivable — leave it in
+place; don't guess whether it's done.
 
-An entry is **archivable** (eligible to move) only when *every* plan name it
-mentions, across all of its `Claiming:`/`Finished:`/`Next:`/`Blockers:`
-lines, is archivable. An entry mentioning even one non-archivable plan stays
-in `HANDOFF.md` in full — never split a single entry across both files.
+An entry still in `HANDOFF.md` is **archivable** (eligible to move) only
+when *every* plan name it mentions, across all of its
+`Claiming:`/`Finished:`/`Next:`/`Blockers:` lines, is archivable per the
+plan-level rule above. An entry mentioning even one non-archivable plan
+stays in `HANDOFF.md` in full — never split a single entry across both
+files. This means a plan can be archivable while one of its own entries
+still stays behind in `HANDOFF.md`, because that entry is tangled with a
+different, still-unfinished plan — only that specific entry is blocked, not
+the whole plan; the plan's other, untangled entries move normally, and the
+blocked entry becomes eligible on a later run once the other plan also
+finishes.
 
-If no entry is archivable, stop and report "No finished plans to archive."
-Make no writes.
+If no entry in `HANDOFF.md` is archivable, stop and report "No finished
+plans to archive." Make no writes.
 
 ### 1D — render the archive update
 

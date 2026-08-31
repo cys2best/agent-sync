@@ -263,10 +263,12 @@ shared files below so other agents see the same thing.
 {WORKFLOW_TOOLS_BLOCK}
 - Read `HANDOFF.md` to see which agent ({OTHER_AGENTS}) last touched
   each plan/task and what's next.
-- Before claiming or executing a plan task, determine whether it belongs to a
-  configured workflow by checking activation signals and owned state. When it
-  does, use that tool's official lifecycle for the whole task, including its
-  required verification and report. Never finish the task outside that workflow.
+- Before claiming or executing a plan task, check whether the user's prompt
+  explicitly names a configured workflow tool or its artifacts. Only then use
+  that tool's official lifecycle for the whole task, including its required
+  verification and report. A prompt that doesn't mention a workflow tool gets
+  a direct, ordinary execution path — do not route it through a workflow tool
+  on your own inference.
 - Claim a task by adding an entry to `HANDOFF.md`:
   `Claiming plan-name/task-N — {AGENT_ID}`
 - Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
@@ -292,13 +294,17 @@ user section after the block.
 non-empty — one bullet per tool, using its `displayName`,
 `activationSignals`, `ownedPaths`, and resolved instructions:
 ```
-- Before plan-scoped work, inspect {TOOL_DISPLAY_NAME}'s activation signals
-  ({ACTIVATION_SIGNALS}) and owned state ({OWNED_PATHS}). If the task belongs to
-  that workflow, follow these rules in order:
+- Only engage {TOOL_DISPLAY_NAME} when the user's prompt explicitly names it
+  or its plan/task artifacts (e.g. mentions {TOOL_DISPLAY_NAME} by name, or
+  references a path under {OWNED_PATHS}). Do not infer that a task belongs to
+  this workflow from task shape, complexity, or ambient activation signals
+  ({ACTIVATION_SIGNALS}) alone — plain requests get a direct, ordinary
+  execution path. When the prompt does invoke {TOOL_DISPLAY_NAME}, follow
+  these rules in order:
   1. {EXECUTION_INSTRUCTION_1}
   2. {EXECUTION_INSTRUCTION_2}
-  Do not substitute a manual or generic execution path. If the required
-  workflow cannot be invoked, stop and report the blocker.
+  Do not substitute a manual or generic execution path once engaged. If the
+  required workflow cannot be invoked, stop and report the blocker.
 ```
 Continue numbering until every resolved instruction has been rendered verbatim.
 Preserve instruction order. If any resolved instruction already says to stop

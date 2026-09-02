@@ -55,17 +55,22 @@ files are left for review rather than overwritten. A pre-existing root
 `.agent-sync.json` from an older install is migrated automatically to
 `.agent-sync/config.json` the first time any agent-sync command runs.
 
-To (re)generate `docs/PROJECT_CONTEXT.md` on its own — for example, after
-declining it during setup, or to refresh it after the repo's tech stack
-changes — run:
+To generate `docs/PROJECT_CONTEXT.md` after declining it during setup, or to
+refresh agent-sync's managed project-policy block, run:
 
 ```
 /agent-sync:project-context
 ```
 
-It inspects the repo (package manifests, lockfiles, README, test/lint
-config, git log, `.gitignore`) and writes real content instead of a blank
-template. Requires `/agent-sync:setup` to have run at least once.
+It performs full repository detection and rendering only when the file is
+missing:
+it inspects package manifests, lockfiles, README, test/lint config, git log,
+and `.gitignore`, then writes real content instead of a blank template. On a
+rerun, ownership is deliberately narrower: it refreshes only the managed
+`project-policy` block and preserves every byte outside that block. Technical
+context, architecture notes, and other user-maintained sections are therefore
+not automatically refreshed after stack changes. Requires `/agent-sync:setup`
+to have run at least once.
 
 `HANDOFF.md` grows every session. To move finished plans' entries out into
 `.agent-sync/HANDOFF.archive.md` and keep the active log short, run:

@@ -51,11 +51,15 @@ use them throughout Phase 1:
    - Ask one more question: "Also generate `docs/PROJECT_CONTEXT.md` now?
      (recommended if this is the first agent-sync setup for this repo)"
      (yes/no, default yes). Record the answer as `{GENERATE_PROJECT_CONTEXT}`.
-   - Before staging `.agent-sync/config.json`, resolve and validate every
-     selected workflow using Phase 1B's workflow policy. On invalid input,
-     report the workflow id and invalid field and do not write the file.
-   - Render the proposed `.agent-sync/config.json` bytes in memory for later
-     application:
+   - Build one configuration object from the selected agents and workflow
+     tools, applying the omission and inline-object rules below.
+     Assign that single validated object to `{EFFECTIVE_CONFIG}` before Phase
+     1B consumes it. Resolve and validate every selected workflow using Phase 1B's
+     workflow policy; on invalid input, report the workflow id and invalid
+     field and do not stage or write the file.
+   - Serialize that exact same `{EFFECTIVE_CONFIG}` object, without rebuilding
+     it from the selections, as the proposed `.agent-sync/config.json`
+     candidate bytes in memory for later application:
      ```json
      { "agents": ["claude", "codex"], "workflowTools": ["superpowers"] }
      ```
@@ -388,12 +392,155 @@ fully resolved staged disposition.
 
 Only run this section when `{GENERATE_PROJECT_CONTEXT}` is yes (first run
 only — never on a repeat run, even if the file is missing or the question
-would otherwise apply). Perform the exact same detection and rendering
-`commands/project-context.md` performs in its own Phase 1 (repo inspection,
-commit-policy detection, `docs/PROJECT_CONTEXT.md` render and classification)
-and stage its result for Phase 2 alongside this command's other targets.
-When `{GENERATE_PROJECT_CONTEXT}` is no or this is not first-run, skip this
-section entirely — do not create, touch, or classify `docs/PROJECT_CONTEXT.md`.
+would otherwise apply). Use the workflow-tool list already resolved and
+validated in Phase 1B, then perform the following self-contained preflight.
+When `{GENERATE_PROJECT_CONTEXT}` is no or this is not first-run, skip all of
+1C — do not create, touch, or classify `docs/PROJECT_CONTEXT.md`.
+
+### 1C.1 — inspect the project and detect commit policy
+
+For a missing `docs/PROJECT_CONTEXT.md`, inspect this repository yourself
+before writing anything — do not use placeholder text. For a managed or
+approved unrecognized file, preserve every byte outside the `project-policy`
+markers while replacing or inserting only that block:
+
+- Read package.json / pyproject.toml / Cargo.toml / go.mod / Gemfile
+  (whichever exists) to identify the language, framework, and package
+  manager.
+- Check for lockfiles to confirm the package manager (package-lock.json,
+  pnpm-lock.yaml, yarn.lock, poetry.lock, Cargo.lock, etc.).
+- Find the test runner and lint/format commands from package.json scripts,
+  Makefile, tox.ini, or CI config (.github/workflows/*.yml).
+- Skim the README for a one/two-sentence description of what the project does
+  and who it's for.
+- Look at the top-level directory layout and note the architecture at a glance
+  (e.g. "monorepo with apps/ and packages/", "Django app with standard
+  app-per-feature layout").
+- Note any obvious "don't touch" paths (generated dirs, vendored code, build
+  output) from .gitignore.
+
+Before target rendering, detect commit policy from local evidence only:
+
+1. Inspect commitlint files and `package.json` commitlint config.
+2. Inspect `COMMIT_CONVENTION.md` and case-insensitive filename variants.
+3. Inspect `CONTRIBUTING.md` and `.github/CONTRIBUTING.md`.
+4. Run `git config --local commit.template`. Resolve a relative value against
+   the repository root, then canonicalize both it and the repository root while
+   following symlinks. Use path-component containment rather than a string
+   prefix: accept only a readable regular file inside the repository root.
+   Reject and never inspect a missing, non-file, personal, or outside-root
+   template. For an accepted template, record `{COMMIT_SOURCE}` as its
+   repository-relative path, never as an absolute path.
+5. Otherwise inspect the latest 50 non-merge subjects. Infer a format only from
+   at least five subjects when at least 70 percent match one recognizable
+   subject pattern.
+6. Otherwise select Conventional Commits fallback:
+   `<type>(optional-scope): imperative description`.
+
+If explicit sources conflict, show them and ask which governs before writes.
+Do not use remote, global, or personal Git configuration as evidence. Inspect
+only commit subjects; never copy commit-body secrets or attribution.
+
+The Conventional Commits fallback types are `feat`, `fix`, `docs`, `refactor`,
+`test`, `build`, `ci`, and `chore`. Features use `feat`; hotfixes use `fix`.
+
+Define the following values before rendering the `project-policy` block:
+
+- `{COMMIT_FORMAT}` is the concise subject grammar.
+- `{COMMIT_SOURCE}` is a repository-relative source path, `git history`, or
+  `Conventional Commits fallback`.
+- `{COMMIT_EXAMPLE_1}` and `{COMMIT_EXAMPLE_2}` are safe examples from the
+  source, or newly written examples that obey the selected format.
+
+### 1C.2 — render and classify docs/PROJECT_CONTEXT.md
+
+Using the resolved configuration and commit policy, render the proposed
+`docs/PROJECT_CONTEXT.md` bytes with this structure, filled in with what you
+actually found (leave a section explicitly marked
+"not detected — fill in manually" if you can't determine it from the repo,
+rather than guessing):
+
+```markdown
+# Project Context
+
+> Single source of truth for project knowledge. Per-agent context files
+> import or point to this file — edit it here, not in any of those.
+
+## What this project is
+<!-- from README / package metadata -->
+
+## Tech stack
+- Language / framework:
+- Package manager:
+- Test runner:
+- Lint / format command:
+
+## Build & verify commands
+\`\`\`
+# install
+# build
+# test
+# lint
+\`\`\`
+
+## Conventions
+- Branch naming: <!-- inferred from git log, or "not detected" -->
+<!-- agent-sync:project-policy:start -->
+- Commit message format: {COMMIT_FORMAT}
+- Commit convention source: {COMMIT_SOURCE}
+- Commit examples: `{COMMIT_EXAMPLE_1}`; `{COMMIT_EXAMPLE_2}`
+{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
+<!-- agent-sync:project-policy:end -->
+- Code style notes:
+- Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
+
+## Plan & spec structure
+- Multiple plans can be active at once. See HANDOFF.md for which agent
+  owns which plan/task right now.
+
+## Architecture notes
+<!-- from directory layout -->
+
+## Decisions log
+<!-- Promote real decisions here as they're made. Newest on top. -->
+- YYYY-MM-DD:
+\`\`\`
+
+The `project-policy` block is inside `## Conventions`. Keep branch naming,
+code style, technical context, architecture, and decisions outside this
+managed block.
+
+Classify `docs/PROJECT_CONTEXT.md` as:
+- `missing`: stage creation of the full render.
+- `managed`: exactly one non-nested matching `project-policy` marker pair
+  exists; stage replacement of the markers and all bytes between them while
+  preserving every byte before and after.
+- `unrecognized`: unmarked content; show the proposed block and ask before
+  inserting it after a top-level title or at byte zero. On no, stage
+  byte-for-byte preservation.
+- `malformed`: one marker missing, duplicate markers, end before start, or a
+  nested managed marker; stage byte-for-byte preservation, report the exact
+  defect, and never guess or ask to overwrite it.
+
+The workflow ownership line inside the `project-policy` block, when the
+resolved workflow-tool list is non-empty, is one line per tool:
+
+```
+- Live execution state (task briefs, reports, progress) is owned by
+  {TOOL_DISPLAY_NAME} at `{ownedPath1}`, `{ownedPath2}`, ... — don't
+  hand-edit these or create files there yourself; that's the tool's
+  job.
+```
+
+When the resolved workflow-tool list is empty, omit the workflow ownership
+line. Keep the `Plan & spec structure` heading and its `Multiple plans...`
+line unchanged.
+
+After the candidate bytes exist, complete classification and collect any
+required approval. Do not continue until `docs/PROJECT_CONTEXT.md` has an
+original byte snapshot (or recorded absence) and a fully resolved staged
+disposition. Stage its result for Phase 2 alongside this command's other
+targets.
 
 ## Phase 2 — apply the fully resolved preflight plan
 

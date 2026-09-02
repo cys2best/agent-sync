@@ -9,21 +9,42 @@ This entire phase is read-only: do not create or modify any file.
 
 ### 1A — resolve configuration
 
-1. If `.agent-sync/config.json` exists, read it. Stage no configuration write.
-2. Else if `.agent-sync.json` exists at the repo root, read it, then stage
-   `{CONFIG_MIGRATION}`: write the same bytes to `.agent-sync/config.json`
-   and delete the root file, to be applied in Phase 2.
+Before resolving configuration, snapshot the bytes or absence of both
+configuration paths: root `.agent-sync.json` and
+`.agent-sync/config.json`. Retain both snapshots through Phase 2.
+
+1. If `.agent-sync/config.json` exists, read it into `{EFFECTIVE_CONFIG}`.
+   Stage no configuration write.
+2. Else if `.agent-sync.json` exists at the repo root, read it into
+   `{EFFECTIVE_CONFIG}`, then stage `{CONFIG_MIGRATION}`: write those exact
+   same bytes to `.agent-sync/config.json` and delete the root file, to be
+   applied in Phase 2.
 3. Else, stop immediately and report: "No agent-sync configuration found.
    Run `/agent-sync:setup` first." Make no writes.
 
 ### 1B — parse HANDOFF.md and HANDOFF.archive.md entries
 
-Read `HANDOFF.md`. Identify the real, user-appended entries: everything
-after the `<!-- agent-sync:handoff-template:end -->` marker and before the
-end of the file (skip the `---` separator itself; entries follow it). Never
-touch or move anything inside the `agent-sync:handoff-template` markers —
-that's the template, not a real entry. These are the **move candidates** —
-the only entries that can ever be staged to move in 1D.
+Snapshot the bytes or absence of `HANDOFF.md` and
+`.agent-sync/HANDOFF.archive.md`. Before parsing any destructive move
+candidate, validate that `HANDOFF.md` exists and has
+exactly one non-nested `handoff-template` marker pair: one
+`<!-- agent-sync:handoff-template:start -->`, one
+`<!-- agent-sync:handoff-template:end -->`, the start before the end, and
+neither marker nested inside another managed marker pair. The end marker must
+be immediately followed by one blank line and the expected separator line
+`---`; no other content may occur between the marker and separator.
+
+If any part of that structure is missing or malformed, stop before all writes,
+including a staged configuration migration. Report the exact defect: missing
+`HANDOFF.md`; the observed start/end marker counts; end before start or nested
+markers; or the missing/misplaced post-template separator. Do not infer entry
+boundaries from malformed content.
+
+After validation, identify the real, user-appended entries: everything after
+the validated separator and before the end of `HANDOFF.md`. Never touch or
+move anything inside the `handoff-template` markers — that's the template, not
+a real entry. These are the **move candidates** — the only entries that can
+ever be staged to move in 1D.
 
 If `.agent-sync/HANDOFF.archive.md` exists, also read it and parse every
 entry in it the same way (there is no template block to skip in this file —
@@ -80,14 +101,17 @@ the whole plan; the plan's other, untangled entries move normally, and the
 blocked entry becomes eligible on a later run once the other plan also
 finishes.
 
-If no entry in `HANDOFF.md` is archivable, stop and report "No finished
-plans to archive." Make no writes.
+If no entry in `HANDOFF.md` is archivable, record "No finished plans to
+archive", stage no archive or `HANDOFF.md` write, and
+continue to Phase 2 so any staged configuration migration still runs. Only the archive and
+`HANDOFF.md` writes are conditional on having entries to move.
 
 ### 1D — render the archive update
 
-For each archivable entry, in **oldest-to-newest** order (reverse of their
-order in `HANDOFF.md`, since the file lists newest-first), prepare to append
-its full, unmodified `### ...` block to `.agent-sync/HANDOFF.archive.md`.
+Only when at least one entry is archivable, for each archivable entry in
+**oldest-to-newest** order (reverse of its order in `HANDOFF.md`, since the
+file lists newest-first), prepare to append its full, unmodified `### ...`
+block to `.agent-sync/HANDOFF.archive.md`.
 
 If `.agent-sync/HANDOFF.archive.md` does not exist, its render begins with
 this header before the first appended entry:
@@ -112,24 +136,32 @@ entry — byte-for-byte unchanged in its original order.
 
 ## Phase 2 — apply the archive
 
-Immediately before the first write, confirm `HANDOFF.md` and
-`.agent-sync/HANDOFF.archive.md` (or its absence) still match their Phase 1
-snapshots. If either changed, stop before writes and restart the entire
-preflight. Otherwise:
+Immediately before the first write, confirm both configuration paths,
+`HANDOFF.md`, and `.agent-sync/HANDOFF.archive.md` still match their Phase 1
+byte-or-absence snapshots. If any path changed, stop before writes and restart
+the entire preflight. Otherwise:
 
 - Apply `{CONFIG_MIGRATION}` if one was staged.
-- Write the staged `.agent-sync/HANDOFF.archive.md` (create or append).
-- Write the staged `HANDOFF.md` (archivable entries removed).
+- Only if entries were staged to move, write the staged
+  `.agent-sync/HANDOFF.archive.md` (create or append) and staged `HANDOFF.md`
+  (archivable entries removed). With zero entries, skip only these two writes.
 
 ## Phase 3 — verify and report
 
-Re-read both files. Confirm every staged-for-archive entry is present,
-byte-for-byte, in `.agent-sync/HANDOFF.archive.md`, and absent from
-`HANDOFF.md`. Confirm every non-archivable entry and the `handoff-template`
-block are still present in `HANDOFF.md`, byte-for-byte unchanged. Stop and
-report any mismatch.
+If `{CONFIG_MIGRATION}` was applied, re-read both configuration paths. Verify
+the destination bytes exactly match the staged legacy bytes and the
+legacy path is absent. Stop and report any mismatch.
 
-Report: which plans were archived and how many entries each contributed;
-which plans looked close but were left in place, and why (an open `Next:`
-mention, or an unfinished `Claiming:`/`Finished:` pair, or no `Claiming:`
-mention at all making the plan's status ambiguous).
+If entries were moved, re-read `HANDOFF.md` and
+`.agent-sync/HANDOFF.archive.md`. Confirm every staged-for-archive entry is
+present, byte-for-byte, in the archive and absent from `HANDOFF.md`. Confirm
+every non-archivable entry and the `handoff-template` block are still present
+in `HANDOFF.md`, byte-for-byte unchanged. If zero entries moved, verify both
+files still match their original snapshots. Stop and report any mismatch.
+
+Report the configuration migration when it occurred. Report which plans were
+archived and how many entries each contributed; or report "No finished plans
+to archive" when zero entries moved. Also report which plans looked close but
+were left in place, and why (an open `Next:` mention, an unfinished
+`Claiming:`/`Finished:` pair, or no `Claiming:` mention at all making the
+plan's status ambiguous).

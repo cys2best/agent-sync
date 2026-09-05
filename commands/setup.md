@@ -428,6 +428,18 @@ If `.claude/settings.json` doesn't exist:
       "commit": "",
       "pr": ""
     },
+    "hooks": {
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 .agent-sync/scripts/archive.py"
+            }
+          ]
+        }
+      ]
+    },
     "permissions": {
       "ask": [
         "Read(./node_modules/**)"
@@ -442,6 +454,18 @@ If `.claude/settings.json` doesn't exist:
     "attribution": {
       "commit": "",
       "pr": ""
+    },
+    "hooks": {
+      "SessionEnd": [
+        {
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python3 .agent-sync/scripts/archive.py"
+            }
+          ]
+        }
+      ]
     }
   }
   ```
@@ -449,7 +473,8 @@ If `.claude/settings.json` doesn't exist:
 If `.claude/settings.json` already exists:
 - Read the existing file into memory.
 - Preserve all existing keys, attribution settings, and permission rules.
-- If `permissions.ask` is missing or does not include the detected vendor patterns (`Read(./{dir}/**)`), merge/append the missing patterns. If all detected patterns are already present, stage byte-for-byte preservation.
+- If `hooks.SessionEnd` is missing or does not include the `archive.py` hook command, merge/append the hook.
+- If `permissions.ask` is missing or does not include the detected vendor patterns (`Read(./{dir}/**)`), merge/append the missing patterns. If all are already present, stage byte-for-byte preservation.
 
 After all candidate bytes exist, complete the earlier classification of every
 target and collect all approvals. Do not continue until `.agent-sync/config.json`

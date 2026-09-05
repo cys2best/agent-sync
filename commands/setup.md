@@ -416,17 +416,40 @@ Plan/task identifiers belong here and in workflow state, not in commit subjects.
 ---
 ```
 
-If `.claude/settings.json` doesn't exist, render and stage these candidate bytes;
-otherwise stage byte-for-byte preservation of the existing JSON:
+For `.claude/settings.json`:
 
-```json
-{
-  "attribution": {
-    "commit": "",
-    "pr": ""
+Detect vendor, dependency, and build directories (check for directory existence at repository root: `node_modules/`, `vendor/`, `.venv/`, `venv/`, `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`, and inspect package manifests `package.json`, `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) to compile `{DETECTED_VENDOR_DIRS}`.
+
+If `.claude/settings.json` doesn't exist:
+- When vendor directories are detected (e.g. `node_modules`, `vendor`, `.venv`), render and stage these candidate bytes:
+  ```json
+  {
+    "attribution": {
+      "commit": "",
+      "pr": ""
+    },
+    "permissions": {
+      "ask": [
+        "Read(./node_modules/**)"
+      ]
+    }
   }
-}
-```
+  ```
+  Add a `Read(./{dir}/**)` entry under `permissions.ask` for each discovered vendor directory (e.g. `Read(./node_modules/**)`, `Read(./vendor/**)`, `Read(./.venv/**)`).
+- When no vendor directories are detected, render and stage:
+  ```json
+  {
+    "attribution": {
+      "commit": "",
+      "pr": ""
+    }
+  }
+  ```
+
+If `.claude/settings.json` already exists:
+- Read the existing file into memory.
+- Preserve all existing keys, attribution settings, and permission rules.
+- If `permissions.ask` is missing or does not include the detected vendor patterns (`Read(./{dir}/**)`), merge/append the missing patterns. If all detected patterns are already present, stage byte-for-byte preservation.
 
 After all candidate bytes exist, complete the earlier classification of every
 target and collect all approvals. Do not continue until `.agent-sync/config.json`
@@ -464,7 +487,7 @@ markers while replacing or inserting only that block:
   app-per-feature layout").
 - Note any obvious "don't touch" paths (generated dirs, vendored code, build
   output) from .gitignore.
-- Detect vendor, dependency, and build directories:
+- Detect vendor, dependency, and build directories (or reuse `{DETECTED_VENDOR_DIRS}` compiled in Phase 1B):
   - Check for directory existence at repository root: `node_modules/`, `vendor/`, `.venv/`, `venv/`, `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`.
   - Also inspect package manifests (`package.json`, `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) for expected dependency trees.
   - Compile the unique list of detected paths as `{DETECTED_VENDOR_DIRS}` (e.g. `node_modules/`, `dist/`).
@@ -622,8 +645,8 @@ rendering, classification, prompts, or user decisions:
   `docs/PROJECT_CONTEXT.md` if staged in 1C), perform its staged creation,
   managed-block update, known-legacy migration, approved insertion, or
   byte-for-byte preservation exactly as classified.
-- Create `.claude/settings.json` only when its staged disposition is `missing`;
-  otherwise preserve it byte-for-byte.
+- Create `.claude/settings.json` when its staged disposition is `missing`; update it
+  if missing vendor permission rules were merged; otherwise preserve it byte-for-byte.
 
 ## Phase 3 — verify and report every target
 

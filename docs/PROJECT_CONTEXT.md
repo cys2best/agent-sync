@@ -51,9 +51,10 @@ sync, without duplicating anything Superpowers already owns.
 - Commit message format: `<type>(optional-scope): imperative description`
 - Commit convention source: Conventional Commits fallback
 - Commit examples: `feat(scaffold): enforce workflow execution`; `fix(policy): preserve unmanaged content`
-- Live execution state (task briefs, reports, progress, and reviews) is owned by
-  Superpowers at `.superpowers/sdd/`, `docs/superpowers/`. Never edit those
-  artifacts outside the applicable Superpowers workflow.
+- Live execution state (task briefs, reports, progress) is owned by
+  Superpowers at `.superpowers/sdd/`, `docs/superpowers/` — don't
+  hand-edit these or create files there yourself; that's the tool's
+  job.
 <!-- agent-sync:project-policy:end -->
 - Code style notes: plain Markdown for commands/docs, 2-space indented JSON for configs/registries, PEP 8 for Python scripts.
 
@@ -74,7 +75,7 @@ sync, without duplicating anything Superpowers already owns.
 
 ## Error Recovery & Learning Protocol
 When an agent encounters a bug, incorrect assumption, or user correction:
-1. **Reproduce with code**: Write a failing unit/regression test in `tests/` before applying the fix.
+1. **Reproduce with code**: Write a failing unit/regression test matching project test conventions (`tests/`) before applying the fix.
 2. **Classify the lesson**:
    - If caught by a test/compiler: Keep it in code. Do not add text to documentation.
    - If it is an architectural boundary rule: Add ONE bullet to `## Things NOT to do`.

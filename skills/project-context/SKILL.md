@@ -1,4 +1,5 @@
 ---
+name: project-context
 description: Detect this repo's tech stack, conventions, and commit policy, and (re)generate docs/PROJECT_CONTEXT.md from an existing agent-sync configuration.
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 ---

@@ -1,0 +1,19 @@
+{
+  "name": "agent-sync",
+  "version": "0.4.0",
+  "description": "Keep multiple coding agents (Claude Code, Codex, Antigravity, and others) in sync on shared project context and task handoff, without duplicating what Superpowers already owns.",
+  "author": {
+    "name": "cys2best"
+  },
+  "homepage": "https://github.com/cys2best/agent-sync",
+  "repository": "https://github.com/cys2best/agent-sync",
+  "license": "MIT",
+  "keywords": [
+    "multi-agent",
+    "codex",
+    "antigravity",
+    "handoff",
+    "project-context",
+    "collaboration"
+  ]
+}

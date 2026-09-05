@@ -1,4 +1,5 @@
 ---
+name: setup
 description: Create or update .agent-sync/config.json and scaffold per-agent context files, HANDOFF.md, and .claude/settings.json so multiple coding agents share project context and task handoff.
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 ---

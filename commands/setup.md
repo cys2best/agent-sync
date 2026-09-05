@@ -25,9 +25,9 @@ use them throughout Phase 1:
    Phase 2 alongside every other write. Skip to Phase 1B.
 3. Else, this is first-run scaffolding for this repo:
    - Read the built-in registries at
-     `${CLAUDE_PLUGIN_ROOT}/registry/agents.json` (known agents:
+     `${CLAUDE_PLUGIN_ROOT:-.}/registry/agents.json` (known agents:
      `displayName`, `contextFile`, `supportsImports`) and
-     `${CLAUDE_PLUGIN_ROOT}/registry/workflow-tools.json` (known
+     `${CLAUDE_PLUGIN_ROOT:-.}/registry/workflow-tools.json` (known
      workflow/plan-execution tools: `displayName`, `ownedPaths`,
      `activationSignals`, `executionInstructions`).
    - Check the repo root for existing hints: a file matching any
@@ -101,10 +101,15 @@ use them throughout Phase 1:
 
 For every agent in `{EFFECTIVE_CONFIG}`'s `agents` array, resolve its
 `displayName`, `contextFile`, and `supportsImports` — from the registry if it's a
-known id, or from the custom object's own fields otherwise. Two agents
-may resolve to the same `contextFile` (Codex and Cursor both default to
-`AGENTS.md`) — render that target once and list every agent mapped to it
-in each other's "other agents" note below.
+known id, or from the custom object's own fields otherwise. Group enabled
+agents in `{EFFECTIVE_CONFIG}` by their resolved target `contextFile`. For each
+unique `contextFile`, define:
+- `{TARGET_AGENTS}`: array of agents configured for this file.
+- `{OTHER_AGENTS}`: comma-joined `displayName` (or id) of every configured
+  agent *not* mapped to this file.
+Two or more agents may resolve to the same `contextFile` (e.g. Codex and
+Antigravity both default to `AGENTS.md`) — render that target once using the
+multi-agent rendering rules below.
 
 Resolve the workflow-tool list from `{EFFECTIVE_CONFIG}`'s `workflowTools`
 key. If the key is absent, treat it as `["superpowers"]`.
@@ -245,16 +250,50 @@ approvals have been collected; do not execute any action yet:
 - `malformed`: stage byte-for-byte preservation, record the exact defect, and
   never guess or ask to overwrite it.
 
-For an agent `contextFile`, fill the managed block below, substituting:
-- `{AGENT_NAME}` → the agent's `displayName`
-- `{IMPORT_BLOCK}` → see below
-- `{WORKFLOW_TOOLS_BLOCK}` → see below
-- `{OTHER_AGENTS}` → comma-joined `displayName` (or id, if no
-  registry `displayName`) of every *other* configured agent
-- `{AGENT_ID}` → the agent's id
+For an agent `contextFile`, define:
+- `{TARGET_AGENTS}`: array of agents configured for this file.
+- `{OTHER_AGENTS}`: comma-joined `displayName` (or id) of every configured
+  agent *not* mapped to this file.
+- `{AGENT_NAMES_JOINED}`: comma-joined `displayName` (or id, if no registry
+  `displayName`) of every agent in `{TARGET_AGENTS}`.
+- `{AGENT_IDS_SLASH}`: id of every agent in `{TARGET_AGENTS}`, joined with `/`
+  (e.g. `codex/antigravity`).
+
+Resolve the per-file title, section, claim rule, and attribution rule based on `{TARGET_AGENTS}` length:
+
+- When `{TARGET_AGENTS}` has length 1 (single agent with `displayName` `{AGENT_NAME}` and id `{AGENT_ID}`):
+  - `{AGENT_TITLE}`: `# {AGENT_NAME} Instructions`
+  - `{AGENT_SECTION}`: `## {AGENT_NAME} specific`
+  - `{CLAIM_RULE}`:
+    ```
+    - Claim a task by adding an entry to `HANDOFF.md`:
+      `Claiming plan-name/task-N — {AGENT_ID}`
+    ```
+  - `{ATTRIBUTION_RULE}`:
+    ```
+    - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
+      commits or PRs. If this agent's setup has an equivalent
+      auto-attribution behavior, disable it the same way
+      `.claude/settings.json` does for Claude Code.
+    ```
+- When `{TARGET_AGENTS}` has length > 1 (multiple agents sharing this file, e.g. Codex and Antigravity):
+  - `{AGENT_TITLE}`: `# Agent Instructions ({AGENT_NAMES_JOINED})`
+  - `{AGENT_SECTION}`: `## {AGENT_NAMES_JOINED} specific`
+  - `{CLAIM_RULE}`:
+    ```
+    - Claim a task by adding an entry to `HANDOFF.md` using your active agent identifier:
+      `Claiming plan-name/task-N — <agent-id>` (use {AGENT_IDS_SLASH} depending on which agent you are running as)
+    ```
+  - `{ATTRIBUTION_RULE}`:
+    ```
+    - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
+      commits or PRs. Disable auto-attribution in your respective agent config.
+    ```
+
+Then fill the managed block below, substituting `{AGENT_TITLE}`, `{IMPORT_BLOCK}`, `{AGENT_SECTION}`, `{WORKFLOW_TOOLS_BLOCK}`, `{OTHER_AGENTS}`, `{CLAIM_RULE}`, and `{ATTRIBUTION_RULE}`:
 
 ```markdown
-# {AGENT_NAME} Instructions
+{AGENT_TITLE}
 
 <!-- agent-sync:agent-policy:start -->
 This file is intentionally thin. All real project knowledge lives in the
@@ -262,7 +301,7 @@ shared files below so other agents see the same thing.
 
 {IMPORT_BLOCK}
 
-## {AGENT_NAME} specific
+{AGENT_SECTION}
 {WORKFLOW_TOOLS_BLOCK}
 - Read `HANDOFF.md` to see which agent ({OTHER_AGENTS}) last touched
   each plan/task and what's next.
@@ -272,26 +311,22 @@ shared files below so other agents see the same thing.
   verification and report. A prompt that doesn't mention a workflow tool gets
   a direct, ordinary execution path — do not route it through a workflow tool
   on your own inference.
-- Claim a task by adding an entry to `HANDOFF.md`:
-  `Claiming plan-name/task-N — {AGENT_ID}`
+{CLAIM_RULE}
 - Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
   names a repository policy file, read that source too. Follow its format and
   examples. Keep plan names, task numbers, agent identity, and AI-attribution
   out of the commit message; workflow state and `HANDOFF.md` retain task
   traceability.
-- Do not add a "Co-Authored-By" trailer or AI-attribution footer to
-  commits or PRs. If this agent's setup has an equivalent
-  auto-attribution behavior, disable it the same way
-  `.claude/settings.json` does for Claude Code.
+{ATTRIBUTION_RULE}
 - At the end of a session, append a handoff entry to `HANDOFF.md`: what
   you finished, what's next, and any blockers, per plan.
 <!-- agent-sync:agent-policy:end -->
 ```
 
-Keep `# {AGENT_NAME} Instructions` outside the markers. The start marker
-immediately precedes the shared-context pointer/import block, and the end
-marker immediately follows the session-handoff rule. Do not create an empty
-user section after the block.
+Keep `{AGENT_TITLE}` outside the markers. The start marker immediately
+precedes the shared-context pointer/import block, and the end marker
+immediately follows the session-handoff rule. Do not create an empty user
+section after the block.
 
 `{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
 non-empty — one bullet per tool, using its `displayName`,
@@ -330,12 +365,23 @@ in its place).
 ```
 
 `{IMPORT_BLOCK}`, when `supportsImports` is false:
+- When `{TARGET_AGENTS}` has length 1:
 ```
 See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
 
 ({AGENT_NAME} doesn't support `@path` imports like Claude Code does —
+read both files above manually at the start of every session, or wire
+this into a startup script if your setup supports one.)
+```
+- When `{TARGET_AGENTS}` has length > 1:
+```
+See:
+- docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
+- HANDOFF.md — the running log between agents, per plan/task
+
+({AGENT_NAMES_JOINED} do not support `@path` imports like Claude Code does —
 read both files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
 ```

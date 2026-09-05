@@ -1,6 +1,6 @@
 # agent-sync
 
-Keep multiple coding agents (Claude Code, Codex, Gemini, Cursor, or any
+Keep multiple coding agents (Claude Code, Codex, Antigravity, Gemini, Cursor, or any
 custom agent) in sync on shared project context and task handoff when
 they work on the same repo — without duplicating what
 [Superpowers](https://github.com/obra/superpowers) already owns.
@@ -12,10 +12,20 @@ they work on the same repo — without duplicating what
   them read each other's natively, so project context (tech stack,
   conventions, build commands) needs one canonical place all of them
   point to: `docs/PROJECT_CONTEXT.md`.
+- **Shared context file disambiguation** — When multiple configured agents
+  share a single context file (such as Codex and Antigravity both reading
+  `AGENTS.md`), agent-sync generates self-disambiguating multi-agent instructions
+  so each agent identifies itself properly in handoffs and task claims without
+  overwriting each other.
 - **Cross-tool handoff** — Superpowers tracks task state within a plan,
   but nothing tracks which agent is working which task right now, or
   leaves notes for whichever agent picks up the work next. That's
   `HANDOFF.md`.
+- **Token cost & context conservation** — Auto-discovers dependency and vendor
+  directories (`node_modules`, `vendor`, `.venv`, etc.) during setup and
+  project-context generation, populates "Things NOT to do" in
+  `docs/PROJECT_CONTEXT.md`, and scaffolds `permissions.ask` in
+  `.claude/settings.json` to prevent agents from wasting context on third-party code.
 - **No manual re-explaining** — `docs/PROJECT_CONTEXT.md` is generated
   by inspecting your actual repo, not hand-written from a blank
   template.
@@ -40,13 +50,16 @@ In any project, run:
 ```
 
 First run: it asks which agents are working this repo (offering built-in
-defaults for Claude Code, Codex, Gemini, and Cursor — see
+defaults for Claude Code, Codex, Antigravity, Gemini, and Cursor — see
 `registry/agents.json` — plus support for custom agents), which
 workflow/plan-execution tools are in use (offering Superpowers by default —
 see `registry/workflow-tools.json` — plus support for none or a custom
 tool), and whether to also generate `docs/PROJECT_CONTEXT.md` now. It then
-writes `.agent-sync/config.json`, one context file per agent, `HANDOFF.md`,
-and `.claude/settings.json`.
+writes `.agent-sync/config.json`, context files for configured agents (grouping
+agents that share a context file, such as Codex and Antigravity sharing
+`AGENTS.md`, with self-disambiguating multi-agent instructions), `HANDOFF.md`,
+and `.claude/settings.json` (scaffolding `permissions.ask` for discovered vendor
+directories).
 
 Re-running is safe. Generated policy is confined to managed blocks, so a
 rerun replaces only those blocks and preserves surrounding content. It safely
@@ -65,12 +78,14 @@ refresh agent-sync's managed project-policy block, run:
 It performs full repository detection and rendering only when the file is
 missing:
 it inspects package manifests, lockfiles, README, test/lint config, git log,
-and `.gitignore`, then writes real content instead of a blank template. On a
-rerun, ownership is deliberately narrower: it refreshes only the managed
-`project-policy` block and preserves every byte outside that block. Technical
-context, architecture notes, and other user-maintained sections are therefore
-not automatically refreshed after stack changes. Requires `/agent-sync:setup`
-to have run at least once.
+and `.gitignore`, and auto-discovers dependency and vendor directories
+(`node_modules`, `vendor`, `.venv`, etc.), then writes real content instead of a
+blank template. Discovered vendor directories are populated under "Things NOT to
+do" to conserve context and reduce token cost. On a rerun, ownership is
+deliberately narrower: it refreshes only the managed `project-policy` block and
+preserves every byte outside that block. Technical context, architecture notes,
+and other user-maintained sections are therefore not automatically refreshed
+after stack changes. Requires `/agent-sync:setup` to have run at least once.
 
 `HANDOFF.md` grows every session. To move finished plans' entries out into
 `.agent-sync/HANDOFF.archive.md` and keep the active log short, run:
@@ -114,8 +129,10 @@ in `HANDOFF.md` until both are finished.
 
 - `.claude/settings.json`'s `attribution` block disables the
   Co-Authored-By commit trailer and "Generated with Claude Code" PR
-  footer for the project it's scaffolded into. To apply it everywhere
-  instead of one repo, copy the same block into
+  footer for the project it's scaffolded into, while its `permissions.ask`
+  block guards discovered vendor directories (e.g. `Read(./node_modules/**)`,
+  `Read(./vendor/**)`, `Read(./.venv/**)`) to prompt before reading vendored code.
+  To apply settings everywhere instead of one repo, copy the blocks into
   `~/.claude/settings.json`.
 - Agent identity only ever appears in `HANDOFF.md` — never in commit
   messages or trailers.

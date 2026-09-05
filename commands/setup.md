@@ -464,6 +464,10 @@ markers while replacing or inserting only that block:
   app-per-feature layout").
 - Note any obvious "don't touch" paths (generated dirs, vendored code, build
   output) from .gitignore.
+- Detect vendor, dependency, and build directories:
+  - Check for directory existence at repository root: `node_modules/`, `vendor/`, `.venv/`, `venv/`, `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`.
+  - Also inspect package manifests (`package.json`, `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) for expected dependency trees.
+  - Compile the unique list of detected paths as `{DETECTED_VENDOR_DIRS}` (e.g. `node_modules/`, `dist/`).
 
 Before target rendering, detect commit policy from local evidence only:
 
@@ -539,6 +543,10 @@ rather than guessing):
 <!-- agent-sync:project-policy:end -->
 - Code style notes:
 - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
+  <!-- When {DETECTED_VENDOR_DIRS} is non-empty:
+  - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
+  When {DETECTED_VENDOR_DIRS} is empty:
+  - Leave generated build artifacts and dependency directories alone. -->
 
 ## Plan & spec structure
 - Multiple plans can be active at once. See HANDOFF.md for which agent
@@ -581,6 +589,18 @@ resolved workflow-tool list is non-empty, is one line per tool:
 When the resolved workflow-tool list is empty, omit the workflow ownership
 line. Keep the `Plan & spec structure` heading and its `Multiple plans...`
 line unchanged.
+
+For `- Things NOT to do (generated files to leave alone, dirs to avoid, etc.):`:
+- When `{DETECTED_VENDOR_DIRS}` is non-empty:
+  ```markdown
+  - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
+    - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
+  ```
+- When `{DETECTED_VENDOR_DIRS}` is empty:
+  ```markdown
+  - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
+    - Leave generated build artifacts and dependency directories alone.
+  ```
 
 After the candidate bytes exist, complete classification and collect any
 required approval. Do not continue until `docs/PROJECT_CONTEXT.md` has an

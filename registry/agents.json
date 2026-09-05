@@ -18,5 +18,10 @@
     "displayName": "Cursor",
     "contextFile": "AGENTS.md",
     "supportsImports": false
+  },
+  "antigravity": {
+    "displayName": "Antigravity",
+    "contextFile": "AGENTS.md",
+    "supportsImports": false
   }
 }

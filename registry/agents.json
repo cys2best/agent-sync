@@ -23,5 +23,10 @@
     "displayName": "Antigravity",
     "contextFile": "AGENTS.md",
     "supportsImports": false
+  },
+  "grok": {
+    "displayName": "Grok",
+    "contextFile": "AGENTS.md",
+    "supportsImports": false
   }
 }

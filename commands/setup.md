@@ -505,13 +505,23 @@ markers while replacing or inserting only that block:
   manager.
 - Check for lockfiles to confirm the package manager (package-lock.json,
   pnpm-lock.yaml, yarn.lock, poetry.lock, Cargo.lock, etc.).
-- Find the test runner and lint/format commands from package.json scripts,
-  Makefile, tox.ini, or CI config (.github/workflows/*.yml).
+- Find the test runner and detect granular execution syntax from package.json
+  scripts, pyproject.toml, Makefile, Cargo.toml, go.mod, tox.ini, or CI config (.github/workflows/*.yml):
+  - Whole suite: `{CMD_TEST_ALL}` (e.g. `bun test`, `npm test`, `pytest`, `cargo test`, `go test ./...`, `python3 -m unittest`)
+  - Specific test file: `{CMD_TEST_FILE}` (e.g. `bun test <file>`, `npm test -- <file>`, `pytest <file>`, `cargo test --test <file>`, `go test <file>`, `python3 -m unittest <file>`)
+  - Single test: `{CMD_TEST_SINGLE}` (e.g. `bun test -- -t "<name>"`, `npm test -- -t "<name>"`, `pytest -k "<name>"`, `cargo test <name>`, `go test -run ^<name>$ ./...`, `python3 -m unittest <module>.<class>.<method>`)
+- Find fast typecheck and lint/format commands:
+  - Fast typecheck: `{CMD_TYPECHECK}` (e.g. `bun run typecheck`, `npx tsc --noEmit`, `mypy`, `pyright`, or "none")
+  - Single file lint: `{CMD_LINT_FILE}` (e.g. `bun run lint:file -- <file>`, `npx eslint <file>`, `ruff check <file>`, or "none")
+  - Project lint: `{CMD_LINT_ALL}` (e.g. `bun run lint`, `npm run lint`, `ruff check .`, or "none")
+- Assemble `{CMD_PRE_PR_RITUAL}`: combine lint/typecheck and test commands (e.g. `{CMD_LINT_ALL} && {CMD_TEST_ALL}`). If a dedicated verification script exists (e.g. `lint:claude`, `check:pr`, `verify`), prefer that script.
+- Check for environment setup files (`.env.example`, `.env.sample`, `docker-compose.yml`, `compose.yaml`). Define `{DETECTED_ENV_SETUP}` (e.g. `cp .env.example .env (check required secrets)` or "not detected — fill in manually").
 - Skim the README for a one/two-sentence description of what the project does
   and who it's for.
-- Look at the top-level directory layout and note the architecture at a glance
-  (e.g. "monorepo with apps/ and packages/", "Django app with standard
-  app-per-feature layout").
+- Look at the top-level directory layout and note architecture and system boundaries:
+  - Routing / API boundaries (e.g. auth middleware, controller paths).
+  - Data access boundaries (e.g. query layer directory vs inline queries).
+  - Module system (ESM vs CommonJS).
 - Note any obvious "don't touch" paths (generated dirs, vendored code, build
   output) from .gitignore.
 - Detect vendor, dependency, and build directories (or reuse `{DETECTED_VENDOR_DIRS}` compiled in Phase 1B):
@@ -564,27 +574,39 @@ rather than guessing):
 # Project Context
 
 > Single source of truth for project knowledge. Per-agent context files
-> import or point to this file — edit it here, not in any of those.
+> (`CLAUDE.md`, `AGENTS.md`) import or point to this file — edit it here,
+> not in any of those.
 
 ## What this project is
 <!-- from README / package metadata -->
 
-## Tech stack
-- Language / framework:
-- Package manager:
-- Test runner:
-- Lint / format command:
+## Tech stack & Environment
+- Language / runtime: {DETECTED_LANGUAGE_AND_RUNTIME}
+- Package manager: {DETECTED_PACKAGE_MANAGER}
+- Test runner: {DETECTED_TEST_RUNNER}
+- Linter / Typecheck: {DETECTED_LINTER}
+- Environment setup: {DETECTED_ENV_SETUP}
 
 ## Build & verify commands
-\`\`\`
-# install
-# build
-# test
-# lint
-\`\`\`
+- Run whole test suite: `{CMD_TEST_ALL}`
+- Run specific test file: `{CMD_TEST_FILE}`
+- Run single test: `{CMD_TEST_SINGLE}`
+- Typecheck (fast): `{CMD_TYPECHECK}`
+- Lint single file: `{CMD_LINT_FILE}`
+- Lint entire project: `{CMD_LINT_ALL}`
+- Pre-PR Verification Ritual:
+  ```bash
+  {CMD_PRE_PR_RITUAL}
+  ```
+
+## Architecture & Boundaries
+<!-- Structural layout and layer constraints. Keep rules paired with enforcement where possible. -->
+- Routing & API Boundary: <!-- e.g., All API routes pass through auth middleware in src/api/middleware/auth.ts -->
+- Data Access Boundary: <!-- e.g., All database queries reside in src/db/queries/; no raw SQL in controllers -->
+- Module System: <!-- e.g., ESM (import/export) only, never CommonJS require() -->
 
 ## Conventions
-- Branch naming: <!-- inferred from git log, or "not detected" -->
+- Branch naming: <!-- inferred from git log, or "not detected — fill in manually" -->
 <!-- agent-sync:project-policy:start -->
 - Commit message format: {COMMIT_FORMAT}
 - Commit convention source: {COMMIT_SOURCE}
@@ -592,11 +614,27 @@ rather than guessing):
 {WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
 <!-- agent-sync:project-policy:end -->
 - Code style notes:
-- Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
-  <!-- When {DETECTED_VENDOR_DIRS} is non-empty:
-  - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
-  When {DETECTED_VENDOR_DIRS} is empty:
-  - Leave generated build artifacts and dependency directories alone. -->
+
+## Things NOT to do
+<!-- Strict negative guardrails to prevent common AI overreach -->
+{THINGS_NOT_TO_DO_VENDOR_BLOCK}
+- Leave adjacent code alone: do not reformat or "clean up" unrelated lines/files outside your task scope.
+- No speculative abstractions: write the minimal concrete code required; do not add unrequested configuration layers.
+- No AI attribution footers: do not add `Co-Authored-By` or AI attribution trailers to commit messages or PRs.
+
+## Project Gotchas & Domain Quirks
+<!-- Domain traps, schema quirks, and non-obvious runtime behaviors.
+     RULE: Only add items that tripped up an agent/dev AND cannot be enforced via types or linters. -->
+- <!-- e.g., Types vs Rows, currency locale defaults -->
+
+## Error Recovery & Learning Protocol
+When an agent encounters a bug, incorrect assumption, or user correction:
+1. **Reproduce with code**: Write a failing unit/regression test in `tests/` before applying the fix.
+2. **Classify the lesson**:
+   - If caught by a test/compiler: Keep it in code. Do not add text to documentation.
+   - If it is an architectural boundary rule: Add ONE bullet to `## Things NOT to do`.
+   - If it is a subtle domain/runtime trap: Add ONE bullet to `## Project Gotchas`.
+3. **Format**: Strict one-line format: `[Component/Symbol]: [Issue / What to use instead]`.
 
 ## Plan & spec structure
 - Multiple plans can be active at once. See HANDOFF.md for which agent
@@ -608,7 +646,7 @@ rather than guessing):
 ## Decisions log
 <!-- Promote real decisions here as they're made. Newest on top. -->
 - YYYY-MM-DD:
-\`\`\`
+```
 
 The `project-policy` block is inside `## Conventions`. Keep branch naming,
 code style, technical context, architecture, and decisions outside this
@@ -640,16 +678,14 @@ When the resolved workflow-tool list is empty, omit the workflow ownership
 line. Keep the `Plan & spec structure` heading and its `Multiple plans...`
 line unchanged.
 
-For `- Things NOT to do (generated files to leave alone, dirs to avoid, etc.):`:
+For `{THINGS_NOT_TO_DO_VENDOR_BLOCK}` under `## Things NOT to do`:
 - When `{DETECTED_VENDOR_DIRS}` is non-empty:
   ```markdown
-  - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
-    - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
+  - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
   ```
 - When `{DETECTED_VENDOR_DIRS}` is empty:
   ```markdown
-  - Things NOT to do (generated files to leave alone, dirs to avoid, etc.):
-    - Leave generated build artifacts and dependency directories alone.
+  - Leave generated build artifacts and dependency directories alone.
   ```
 
 After the candidate bytes exist, complete classification and collect any

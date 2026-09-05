@@ -1,6 +1,6 @@
 # agent-sync
 
-Keep multiple coding agents (Claude Code, Codex, Antigravity, Gemini, Cursor, or any
+Keep multiple coding agents (Claude Code, Codex, Antigravity, Grok, Gemini, Cursor, or any
 custom agent) in sync on shared project context and task handoff when
 they work on the same repo — without duplicating what
 [Superpowers](https://github.com/obra/superpowers) already owns.
@@ -34,12 +34,31 @@ they work on the same repo — without duplicating what
 
 ## Install
 
+### Claude Code
 Add this repo as a marketplace source, then install the plugin:
-
 ```
 /plugin marketplace add cys2best/agent-sync
 /plugin install agent-sync
 ```
+
+### Google Antigravity (`agy`)
+Clone into your Antigravity global configuration (or workspace `.agents/` directory):
+```bash
+# Global installation (available across all projects)
+git clone https://github.com/cys2best/agent-sync.git ~/.gemini/config/plugins/agent-sync
+
+# Or workspace-level installation
+git clone https://github.com/cys2best/agent-sync.git .agents/plugins/agent-sync
+```
+Antigravity automatically loads `agent-sync` commands and respects project instructions in `AGENTS.md`.
+
+### Grok (Grok Build CLI)
+Clone into Grok's skills directory:
+```bash
+# Global installation (available across all projects)
+git clone https://github.com/cys2best/agent-sync.git ~/.grok/skills/agent-sync
+```
+Grok Build automatically reads repository conventions and handoffs from `AGENTS.md`.
 
 ## Use
 
@@ -50,13 +69,13 @@ In any project, run:
 ```
 
 First run: it asks which agents are working this repo (offering built-in
-defaults for Claude Code, Codex, Antigravity, Gemini, and Cursor — see
+defaults for Claude Code, Codex, Antigravity, Grok, Gemini, and Cursor — see
 `registry/agents.json` — plus support for custom agents), which
 workflow/plan-execution tools are in use (offering Superpowers by default —
 see `registry/workflow-tools.json` — plus support for none or a custom
 tool), and whether to also generate `docs/PROJECT_CONTEXT.md` now. It then
 writes `.agent-sync/config.json`, context files for configured agents (grouping
-agents that share a context file, such as Codex and Antigravity sharing
+agents that share a context file, such as Codex, Antigravity, and Grok sharing
 `AGENTS.md`, with self-disambiguating multi-agent instructions), `HANDOFF.md`,
 and `.claude/settings.json` (scaffolding `permissions.ask` for discovered vendor
 directories).

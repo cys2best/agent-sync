@@ -37,6 +37,7 @@ a startup script if your setup supports one.)
   traceability.
 - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
   commits or PRs. Disable auto-attribution in your respective agent config.
-- At the end of a session, append a handoff entry to `HANDOFF.md`: what
-  you finished, what's next, and any blockers, per plan.
+- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
+  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
+  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
 <!-- agent-sync:agent-policy:end -->

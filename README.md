@@ -123,7 +123,9 @@ in `HANDOFF.md` until both are finished.
    subjects.
 6. Every SDD task, including final verification, needs its
    workflow-generated brief and report.
-7. At session end, append a handoff entry to `HANDOFF.md`.
+7. At session end, append a compact handoff entry to `HANDOFF.md` with task IDs
+   only (`plan-name/task-N` or `none`) — rich execution details belong in workflow
+   state (e.g. `.superpowers/sdd/`).
 
 ## Notes
 

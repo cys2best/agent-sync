@@ -318,8 +318,9 @@ shared files below so other agents see the same thing.
   out of the commit message; workflow state and `HANDOFF.md` retain task
   traceability.
 {ATTRIBUTION_RULE}
-- At the end of a session, append a handoff entry to `HANDOFF.md`: what
-  you finished, what's next, and any blockers, per plan.
+- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
+  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
+  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
 <!-- agent-sync:agent-policy:end -->
 ```
 
@@ -397,19 +398,18 @@ entry outside it:
 # Handoff Log
 
 <!-- agent-sync:handoff-template:start -->
-<!-- Newest entry on top. Each agent appends one entry at session end,
-     and one "Claiming" line when picking up a task. Multiple plans can
-     appear here at once — always include the plan name. -->
+<!-- Keep entries minimal: task IDs only. Do not write summaries or progress prose here
+     — detailed briefs, reports, and reviews belong in your workflow tool (e.g. .superpowers/sdd/). -->
 
 Plan/task identifiers belong here and in workflow state, not in commit subjects.
 
 ## Template for new entries
 \`\`\`
 ### YYYY-MM-DD HH:MM — [{AGENT_IDS_PIPE}]
-- Claiming: plan-name/task-N (if starting new work)
-- Finished: plan-name/task-N, other-plan/task-M
-- Next: plan-name/task-K is ready, depends on plan-name/task-N
-- Blockers: none / describe
+- Claiming: plan-name/task-N
+- Finished: plan-name/task-N
+- Next: plan-name/task-K (or none)
+- Blockers: none (or 1-line reason)
 \`\`\`
 <!-- agent-sync:handoff-template:end -->
 

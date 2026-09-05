@@ -34,6 +34,7 @@ shared files below so other agents see the same thing.
   commits or PRs. If this agent's setup has an equivalent
   auto-attribution behavior, disable it the same way
   `.claude/settings.json` does for Claude Code.
-- At the end of a session, append a handoff entry to `HANDOFF.md`: what
-  you finished, what's next, and any blockers, per plan.
+- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
+  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
+  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
 <!-- agent-sync:agent-policy:end -->

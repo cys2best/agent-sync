@@ -426,7 +426,8 @@ If `.claude/settings.json` doesn't exist:
   {
     "attribution": {
       "commit": "",
-      "pr": ""
+      "pr": "",
+      "sessionUrl": false
     },
     "hooks": {
       "SessionEnd": [
@@ -453,7 +454,8 @@ If `.claude/settings.json` doesn't exist:
   {
     "attribution": {
       "commit": "",
-      "pr": ""
+      "pr": "",
+      "sessionUrl": false
     },
     "hooks": {
       "SessionEnd": [

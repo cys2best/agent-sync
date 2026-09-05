@@ -17,7 +17,7 @@ shared files below so other agents see the same thing.
   3. Never execute a managed task manually or create or edit Superpowers-owned artifacts directly.
   4. If the required workflow cannot be invoked, stop and report the blocker.
   Do not substitute a manual or generic execution path.
-- Read `HANDOFF.md` to see which agent (Codex) last touched each
+- Read `HANDOFF.md` to see which agent (Codex, Antigravity) last touched each
   plan/task and what's next.
 - Before claiming or executing a plan task, determine whether it belongs to a
   configured workflow by checking activation signals and owned state. When it

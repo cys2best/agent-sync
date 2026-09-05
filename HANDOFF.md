@@ -9,7 +9,7 @@ Plan/task identifiers belong here and in workflow state, not in commit subjects.
 
 ## Template for new entries
 ```
-### YYYY-MM-DD HH:MM — [claude|codex]
+### YYYY-MM-DD HH:MM — [claude|codex|antigravity]
 - Claiming: plan-name/task-N (if starting new work)
 - Finished: plan-name/task-N, other-plan/task-M
 - Next: plan-name/task-K is ready, depends on plan-name/task-N
@@ -18,6 +18,12 @@ Plan/task identifiers belong here and in workflow state, not in commit subjects.
 <!-- agent-sync:handoff-template:end -->
 
 ---
+
+### 2026-09-05 20:52 — antigravity
+- Claiming: none
+- Finished: 2026-09-05-antigravity-support-and-vendor-discovery/task-6 (dogfood updates and verification complete)
+- Next: all tasks in 2026-09-05-antigravity-support-and-vendor-discovery complete
+- Blockers: none
 
 ### 2026-08-30 03:08 — codex
 - Claiming: 2026-08-30-agent-sync-effective-config-fix/task-0

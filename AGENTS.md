@@ -1,4 +1,4 @@
-# Codex Instructions
+# Agent Instructions (Codex, Antigravity)
 
 <!-- agent-sync:agent-policy:start -->
 This file is intentionally thin. All real project knowledge lives in the
@@ -8,11 +8,11 @@ See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
 
-(Codex doesn't support `@path` imports like Claude Code does — read both
-files above manually at the start of every session, or wire this into a
-startup script if your Codex setup supports one.)
+(Codex and Antigravity do not support `@path` imports like Claude Code does —
+read both files above manually at the start of every session, or wire this into
+a startup script if your setup supports one.)
 
-## Codex specific
+## Codex, Antigravity specific
 - Before plan-scoped work, inspect Superpowers's activation signals
   (`.superpowers/sdd/*/progress.md`, `docs/superpowers/plans/*.md`) and owned
   state (`.superpowers/sdd/`, `docs/superpowers/`). If the task belongs to
@@ -28,17 +28,15 @@ startup script if your Codex setup supports one.)
   configured workflow by checking activation signals and owned state. When it
   does, use that tool's official lifecycle for the whole task, including its
   required verification and report. Never finish the task outside that workflow.
-- Claim a task by adding an entry to `HANDOFF.md`:
-  `Claiming plan-name/task-N — codex`
+- Claim a task by adding an entry to `HANDOFF.md` using your active agent identifier:
+  `Claiming plan-name/task-N — <agent-id>` (use codex/antigravity depending on which agent you are running as)
 - Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
   names a repository policy file, read that source too. Follow its format and
   examples. Keep plan names, task numbers, agent identity, and AI-attribution
   out of the commit message; workflow state and `HANDOFF.md` retain task
   traceability.
 - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
-  commits or PRs. If this agent's setup has an equivalent
-  auto-attribution behavior, disable it the same way
-  `.claude/settings.json` does for Claude Code.
+  commits or PRs. Disable auto-attribution in your respective agent config.
 - At the end of a session, append a handoff entry to `HANDOFF.md`: what
   you finished, what's next, and any blockers, per plan.
 <!-- agent-sync:agent-policy:end -->

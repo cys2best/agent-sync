@@ -9,3 +9,7 @@
 # Private development workflow state and design history.
 /.superpowers/
 /docs/superpowers/
+
+# Python test cache
+__pycache__/
+*.pyc

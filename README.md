@@ -23,7 +23,7 @@ they work on the same repo — without duplicating what
   `HANDOFF.md`.
 - **Token cost & context conservation** — Auto-discovers dependency and vendor
   directories (`node_modules`, `vendor`, `.venv`, etc.) during setup and
-  project-context generation, populates "Things NOT to do" in
+  project-context generation, adds a compact exclusion boundary in
   `docs/PROJECT_CONTEXT.md`, and scaffolds `permissions.ask` in
   `.claude/settings.json` to prevent agents from wasting context on third-party code.
 - **No manual re-explaining** — `docs/PROJECT_CONTEXT.md` is generated
@@ -99,12 +99,27 @@ missing:
 it inspects package manifests, lockfiles, README, test/lint config, git log,
 and `.gitignore`, and auto-discovers dependency and vendor directories
 (`node_modules`, `vendor`, `.venv`, etc.), then writes real content instead of a
-blank template. Discovered vendor directories are populated under "Things NOT to
-do" to conserve context and reduce token cost. On a rerun, ownership is
+blank template. The compact context targets 80 lines, with a ceiling of 120 lines
+and 1,200 words: purpose/stack, essential commands, up to five boundaries, shared
+policy, and at most five one-line lessons. Unknown fields, empty sections,
+duplicate facts, architecture inventories, and historical decisions are omitted.
+Lessons use `Component: pitfall → action`; merge duplicates and replace obsolete
+entries, keeping testable regressions in tests. Detected vendor paths share one
+boundary bullet.
+
+Shared policy includes concise versions of the first three
+[Karpathy-inspired principles](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/README.md#the-four-principles-in-detail):
+state meaningful assumptions before coding, choose the simplest sufficient
+implementation, and keep changes confined to the requested work. These apply
+to all configured agents and models and refresh with the managed policy block.
+
+On a rerun, ownership is
 deliberately narrower: it refreshes only the managed `project-policy` block and
 preserves every byte outside that block. Technical context, architecture notes,
 and other user-maintained sections are therefore not automatically refreshed
-after stack changes. Requires `/agent-sync:setup` to have run at least once.
+after stack changes. An oversized existing file is reported, not automatically
+trimmed; request a separate cleanup to remove redundant or obsolete content.
+Requires `/agent-sync:setup` to have run at least once.
 
 `HANDOFF.md` grows every session. To move finished plans' entries out into
 `.agent-sync/HANDOFF.archive.md` and keep the active log short, run:

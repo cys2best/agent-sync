@@ -38,40 +38,21 @@ before writing anything — do not use placeholder text. For a managed or
 approved unrecognized file, preserve every byte outside the `project-policy`
 markers while replacing or inserting only that block:
 
-- Read package.json / pyproject.toml / Cargo.toml / go.mod / Gemfile
-  (whichever exists) to identify the language, framework, and package
-  manager.
-- Check for lockfiles to confirm the package manager (package-lock.json,
-  pnpm-lock.yaml, yarn.lock, poetry.lock, Cargo.lock, etc.).
-- Find the test runner and detect granular execution syntax from package.json
-  scripts, pyproject.toml, Makefile, Cargo.toml, go.mod, tox.ini, or CI config (.github/workflows/*.yml):
-  - Whole suite: `{CMD_TEST_ALL}` (e.g. `bun test`, `npm test`, `pytest`, `cargo test`, `go test ./...`, `python3 -m unittest`)
-  - Specific test file: `{CMD_TEST_FILE}` (e.g. `bun test <file>`, `npm test -- <file>`, `pytest <file>`, `cargo test --test <file>`, `go test <file>`, `python3 -m unittest <file>`)
-  - Single test: `{CMD_TEST_SINGLE}` (e.g. `bun test -- -t "<name>"`, `npm test -- -t "<name>"`, `pytest -k "<name>"`, `cargo test <name>`, `go test -run ^<name>$ ./...`, `python3 -m unittest <module>.<class>.<method>`)
-- Detect test directory and file conventions:
-  - Check for test directories: `tests/`, `test/`, `spec/`, `src/test/`, `__tests__/`, `*.Tests/`.
-  - Check for colocated test patterns: `*_test.go`, `*.test.{ts,js,tsx,jsx}`, `*.spec.{ts,js,tsx,jsx}`, `test_*.py`.
-  - If a dedicated directory exists, define `{DETECTED_TEST_LOCATION}` as that directory path (e.g. `tests/`, `test/`, `spec/`, `src/test/java/`).
-  - If tests are colocated with source, define `{DETECTED_TEST_LOCATION}` as the matching pattern (e.g. `colocated alongside source files (*.test.ts, *_test.go)`).
-  - If no existing tests or directories are found, define `{DETECTED_TEST_LOCATION}` as `in the test suite or matching project conventions`.
-- Find fast typecheck and lint/format commands:
-  - Fast typecheck: `{CMD_TYPECHECK}` (e.g. `bun run typecheck`, `npx tsc --noEmit`, `mypy`, `pyright`, or "none")
-  - Single file lint: `{CMD_LINT_FILE}` (e.g. `bun run lint:file -- <file>`, `npx eslint <file>`, `ruff check <file>`, or "none")
-  - Project lint: `{CMD_LINT_ALL}` (e.g. `bun run lint`, `npm run lint`, `ruff check .`, or "none")
-- Assemble `{CMD_PRE_PR_RITUAL}`: combine lint/typecheck and test commands (e.g. `{CMD_LINT_ALL} && {CMD_TEST_ALL}`). If a dedicated verification script exists (e.g. `lint:claude`, `check:pr`, `verify`), prefer that script.
-- Check for environment setup files (`.env.example`, `.env.sample`, `docker-compose.yml`, `compose.yaml`). Define `{DETECTED_ENV_SETUP}` (e.g. `cp .env.example .env (check required secrets)` or "not detected — fill in manually").
-- Skim the README for a one/two-sentence description of what the project
-  does and who it's for.
-- Look at the top-level directory layout and note architecture and system boundaries:
-  - Routing / API boundaries (e.g. auth middleware, controller paths).
-  - Data access boundaries (e.g. query layer directory vs inline queries).
-  - Module system (ESM vs CommonJS).
-- Note any obvious "don't touch" paths (generated dirs, vendored code,
-  build output) from .gitignore.
-- Detect vendor, dependency, and build directories:
-  - Check for directory existence at repository root: `node_modules/`, `vendor/`, `.venv/`, `venv/`, `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`.
-  - Also inspect package manifests (`package.json`, `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) for expected dependency trees.
-  - Compile the unique list of detected paths as `{DETECTED_VENDOR_DIRS}` (e.g. `node_modules/`, `dist/`).
+- Read the relevant manifest, lockfile, README, task scripts, and CI config
+  to identify purpose, runtime, package manager, and commands. Inspect only
+  enough first-party files to confirm these facts.
+- Resolve `{CMD_VERIFY}` to the existing verification script, or a compact
+  combination of the project's test and lint/typecheck commands.
+  Resolve `{CMD_TEST_FOCUSED}` to one useful targeted-test example when known;
+  `{CMD_BUILD}` and `{CMD_SETUP}` only when they add necessary information.
+  Never invent commands; omit unavailable commands and report essential gaps.
+- Identify up to five non-obvious boundaries or constraints with concrete
+  paths. Do not produce a directory inventory or describe code readable at
+  the point of use. Prefer links to existing detailed documentation.
+- Detect vendor/build directories from the relevant manifests, .gitignore,
+  and root directory names (reuse setup's `{DETECTED_VENDOR_DIRS}` if available).
+  Record the unique existing paths as `{DETECTED_VENDOR_DIRS}`; do not scan
+  their contents. Render at most one exclusion bullet.
 
 Before target rendering, detect commit policy from local evidence only:
 
@@ -103,98 +84,74 @@ Define the following values before rendering the `project-policy` block:
 - `{COMMIT_FORMAT}` is the concise subject grammar.
 - `{COMMIT_SOURCE}` is a repository-relative source path, `git history`, or
   `Conventional Commits fallback`.
-- `{COMMIT_EXAMPLE_1}` and `{COMMIT_EXAMPLE_2}` are safe examples from the
-  source, or newly written examples that obey the selected format.
+- `{COMMIT_EXAMPLE_1}` is one safe example from the source or a newly written
+  example that obeys the selected format.
 
 ### 1D — render and classify docs/PROJECT_CONTEXT.md
 
 Using the resolved configuration and commit policy, render the proposed
-`docs/PROJECT_CONTEXT.md` bytes with this structure, filled in with what you
-actually found (leave a section explicitly marked
-"not detected — fill in manually" if you can't determine it from the
-repo, rather than guessing):
+`docs/PROJECT_CONTEXT.md` using the compact structure below.
+
+For a new file, aim for 80 lines; require at most 120 lines and 1,200 words
+(including the managed block). Keep only facts that change how an agent works.
+Omit empty sections, unknown/unused commands, placeholder comments, "none" or
+"not detected" filler, directory inventories, duplicate rules, session history,
+and the decisions log. Do not duplicate commands already covered by verify.
+Use at most five boundary bullets and five one-line lessons; capture only
+observed pitfalls that cannot be adequately enforced by tests or tooling.
+Do not fabricate lessons on first setup. Link to existing detailed docs when
+needed rather than copying them or creating an overflow document automatically.
 
 ```markdown
 # Project Context
 
-> Single source of truth for project knowledge. Per-agent context files
-> (`CLAUDE.md`, `AGENTS.md`) import or point to this file — edit it here,
-> not in any of those.
+## Overview
+{PROJECT_PURPOSE_AND_STACK_IN_TWO_SENTENCES}
 
-## What this project is
-<!-- from README / package metadata -->
+## Commands
+- Verify: `{CMD_VERIFY}`
+- Focused test: `{CMD_TEST_FOCUSED}`
+- Build: `{CMD_BUILD}`
+- Setup: `{CMD_SETUP}`
 
-## Tech stack & Environment
-- Language / runtime: {DETECTED_LANGUAGE_AND_RUNTIME}
-- Package manager: {DETECTED_PACKAGE_MANAGER}
-- Test runner: {DETECTED_TEST_RUNNER}
-- Linter / Typecheck: {DETECTED_LINTER}
-- Environment setup: {DETECTED_ENV_SETUP}
-
-## Build & verify commands
-- Run whole test suite: `{CMD_TEST_ALL}`
-- Run specific test file: `{CMD_TEST_FILE}`
-- Run single test: `{CMD_TEST_SINGLE}`
-- Typecheck (fast): `{CMD_TYPECHECK}`
-- Lint single file: `{CMD_LINT_FILE}`
-- Lint entire project: `{CMD_LINT_ALL}`
-- Pre-PR Verification Ritual:
-  ```bash
-  {CMD_PRE_PR_RITUAL}
-  ```
-
-## Architecture & Boundaries
-<!-- Structural layout and layer constraints. Keep rules paired with enforcement where possible. -->
-- Routing & API Boundary: <!-- e.g., All API routes pass through auth middleware in src/api/middleware/auth.ts -->
-- Data Access Boundary: <!-- e.g., All database queries reside in src/db/queries/; no raw SQL in controllers -->
-- Module System: <!-- e.g., ESM (import/export) only, never CommonJS require() -->
+## Boundaries
+{UP_TO_FIVE_ACTIONABLE_PATH_SPECIFIC_CONSTRAINTS}
+{VENDOR_EXCLUSION_IF_DETECTED}
 
 ## Conventions
-- Branch naming: <!-- inferred from git log, or "not detected — fill in manually" -->
 <!-- agent-sync:project-policy:start -->
-- Commit message format: {COMMIT_FORMAT}
-- Commit convention source: {COMMIT_SOURCE}
-- Commit examples: `{COMMIT_EXAMPLE_1}`; `{COMMIT_EXAMPLE_2}`
+- Commit format: {COMMIT_FORMAT}
+- Commit source: {COMMIT_SOURCE}
+- Commit example: `{COMMIT_EXAMPLE_1}`
 {WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
+- Think Before Coding: State consequential assumptions and tradeoffs; ask when ambiguity changes the result, and suggest a simpler approach when appropriate.
+- Simplicity First: Implement only the requested behavior with the smallest clear solution; avoid speculative features, configuration, and abstractions.
+- Surgical Changes: Match local style, change only what the task requires, and remove only code made unused by your changes; flag unrelated cleanup separately.
+- Learning: Keep up to five one-line lessons (25 words each) as `Component: pitfall → action`; merge duplicates, replace obsolete entries, and prefer regression tests.
+- Context upkeep: Aim for 80 lines, at most 120 lines and 1,200 words; keep actionable facts once, link to existing detail, and omit history, progress, and empty sections.
 <!-- agent-sync:project-policy:end -->
-- Code style notes:
+{NON_OBVIOUS_PROJECT_STYLE_IF_ANY}
 
-## Things NOT to do
-<!-- Strict negative guardrails to prevent common AI overreach -->
-{THINGS_NOT_TO_DO_VENDOR_BLOCK}
-- Leave adjacent code alone: do not reformat or "clean up" unrelated lines/files outside your task scope.
-- No speculative abstractions: write the minimal concrete code required; do not add unrequested configuration layers.
-- No AI attribution footers: do not add `Co-Authored-By` or AI attribution trailers to commit messages or PRs.
-
-## Project Gotchas & Domain Quirks
-<!-- Domain traps, schema quirks, and non-obvious runtime behaviors.
-     RULE: Only add items that tripped up an agent/dev AND cannot be enforced via types or linters. -->
-- <!-- e.g., Types vs Rows, currency locale defaults -->
-
-## Error Recovery & Learning Protocol
-When an agent encounters a bug, incorrect assumption, or user correction:
-1. **Reproduce with code**: Write a failing unit/regression test matching project conventions ({DETECTED_TEST_LOCATION}) before applying the fix.
-2. **Classify the lesson**:
-   - If caught by a test/compiler: Keep it in code. Do not add text to documentation.
-   - If it is an architectural boundary rule: Add ONE bullet to `## Things NOT to do`.
-   - If it is a subtle domain/runtime trap: Add ONE bullet to `## Project Gotchas`.
-3. **Format**: Strict one-line format: `[Component/Symbol]: [Issue / What to use instead]`.
-
-## Plan & spec structure
-- Multiple plans can be active at once. See HANDOFF.md for which agent
-  owns which plan/task right now.
-
-## Architecture notes
-<!-- from directory layout -->
-
-## Decisions log
-<!-- Promote real decisions here as they're made. Newest on top. -->
-- YYYY-MM-DD:
+## Lessons
+{UP_TO_FIVE_OBSERVED_ONE_LINE_LESSONS_OR_OMIT_SECTION}
 ```
 
-The `project-policy` block is inside `## Conventions`. Keep branch naming,
-code style, technical context, architecture, and decisions outside this managed
-block.
+The `project-policy` managed block includes commit/workflow policy, the three
+coding principles, and the learning/context upkeep rules. Keep technical
+facts and lessons outside it. The principles apply to every configured agent,
+independent of workflow and model choice.
+
+Before applying a new file, count candidate lines and whitespace-delimited
+words. If over budget, remove repetition and link to existing detail, preserving
+all required policy. If required policy alone cannot fit, report the conflict
+before writing rather than silently dropping instructions.
+
+For an existing file, replace only the managed block; never apply the new
+template or size limit by deleting unmanaged content. Report an oversized
+existing file and offer a separate, explicitly requested cleanup. When the user
+requests that cleanup, retain unique actionable constraints and commands;
+remove obsolete, redundant, or historical material. Normal reruns must continue
+to preserve unmanaged bytes, even when they exceed the new budget.
 
 Classify `docs/PROJECT_CONTEXT.md` the same way as any managed target:
 `missing` (stage creation), `managed` (exactly one non-nested marker pair —
@@ -214,19 +171,11 @@ resolved workflow-tool list is non-empty — one line per tool:
 ```
 (repeat one such line per configured workflow tool)
 
-When the resolved workflow-tool list is empty, omit the workflow ownership
-line from the `project-policy` block. Keep the `Plan & spec structure` heading
-and its `Multiple plans...` line unchanged.
+When the resolved workflow-tool list is empty, omit its ownership line.
 
-For `{THINGS_NOT_TO_DO_VENDOR_BLOCK}` under `## Things NOT to do`:
-- When `{DETECTED_VENDOR_DIRS}` is non-empty:
-  ```markdown
-  - Do not read, search, or edit vendored or build directories ({DETECTED_VENDOR_DIRS}) to conserve context and reduce cost. Only inspect specific files if diagnosing third-party bugs after checking project source code.
-  ```
-- When `{DETECTED_VENDOR_DIRS}` is empty:
-  ```markdown
-  - Leave generated build artifacts and dependency directories alone.
-  ```
+For `{VENDOR_EXCLUSION_IF_DETECTED}`, render one bullet naming the detected
+vendor/build paths to avoid unless the task requires them; omit it if none
+are detected. Count this bullet within the five-boundary limit.
 
 After all candidate bytes exist, complete the classification and collect any
 required approval. Do not continue until `.agent-sync/config.json` (existing
@@ -255,6 +204,6 @@ any mismatch.
 Report the disposition (created, updated, or preserved, with reason), the
 config migration if one occurred, the detected commit-policy source, any
 rejected outside-root commit template, and which project-context sections
-came from real project signals versus remained "not detected", with a
-reminder to review those gaps.
+came from real project signals and any essential gaps, plus line/word counts
+and any existing-file budget warning.
 </content>

@@ -2,17 +2,23 @@
   "claude": {
     "displayName": "Claude Code",
     "contextFile": "CLAUDE.md",
-    "supportsImports": true
+    "supportsImports": true,
+    "modelDefaults": { "planning": "sonnet", "implementation": "haiku", "review": "sonnet" },
+    "modelSelectionInstructions": "Use the supported subagent model option or a custom subagent model field when the workflow dispatches a phase. For work in the main session, the user can select the model with /model. Verify host overrides have not forced a different model."
   },
   "codex": {
     "displayName": "Codex",
     "contextFile": "AGENTS.md",
-    "supportsImports": false
+    "supportsImports": false,
+    "modelDefaults": { "planning": "gpt-5.6-sol", "implementation": "gpt-5.6-luna", "review": "gpt-5.6-sol" },
+    "modelSelectionInstructions": "Use an exposed subagent model override or the workflow's configured custom agent model when supported. For main-session work, request the host's model picker or a new CLI session with -m MODEL. A Markdown instruction alone does not change the running model."
   },
   "gemini": {
     "displayName": "Gemini",
     "contextFile": "GEMINI.md",
-    "supportsImports": false
+    "supportsImports": false,
+    "modelDefaults": { "planning": "pro", "implementation": "flash", "review": "pro" },
+    "modelSelectionInstructions": "These aliases target Gemini CLI. Use its supported /model selector or --model option; do not assume that the host exposes per-subagent selection or that another Gemini application accepts CLI aliases."
   },
   "cursor": {
     "displayName": "Cursor",

@@ -118,6 +118,84 @@ ever claimed has a matching `Finished:` line and no entry still lists it
 under `Next:`. Entries that mix a finished plan with a still-open one stay
 in `HANDOFF.md` until both are finished.
 
+## Workflow model selection
+
+To spend more reasoning on planning and review, add optional `modelPolicy`
+to `.agent-sync/config.json`, then rerun `/agent-sync:setup`. Existing agents
+and workflows stay as configured; policy keys must reference enabled IDs.
+For example, a project using Claude Code and Codex with Superpowers can use:
+
+```json
+{
+  "agents": ["claude", "codex"],
+  "workflowTools": ["superpowers"],
+  "modelPolicy": {
+    "superpowers": {
+      "claude": {
+        "planning": "sonnet",
+        "implementation": "haiku",
+        "review": "sonnet",
+        "escalation": "ask"
+      },
+      "codex": {
+        "planning": "gpt-5.6-sol",
+        "implementation": "gpt-5.6-luna",
+        "review": "gpt-5.6-sol",
+        "escalation": "ask"
+      }
+    }
+  }
+}
+```
+
+These are recommended starting points, not guarantees that the cheaper model
+can implement every plan. Research and replanning use `planning`; coding and
+test execution use `implementation` once the plan is ready; task reviews and
+the final branch review use `review`. All three model strings are required
+for an explicit policy. They may be supported aliases or exact model IDs.
+
+Suggested pairings, checked against official documentation on 2026-09-10:
+
+| Agent | Planning and review | Implementation | Source |
+| --- | --- | --- | --- |
+| Claude Code | `sonnet` | `haiku` | [Claude model selection](https://code.claude.com/docs/en/sub-agents#choose-a-model) |
+| Codex | `gpt-5.6-sol` | `gpt-5.6-luna` | [OpenAI model guidance](https://learn.chatgpt.com/docs/models) |
+| Gemini CLI | `pro` | `flash` | [Gemini CLI aliases](https://geminicli.com/docs/cli/cli-reference/#model-selection) |
+
+Use stronger implementation models for work that still needs substantial
+design judgment. Cursor, Antigravity, Grok, and custom agents accept explicit
+phase mappings, but have no bundled preset: select IDs supported by the
+particular host and account. Gemini CLI aliases are not assumed to work in
+Antigravity. Model availability must be checked in the running host.
+
+An agent policy can also be `"balanced"`, which uses its registry
+`modelDefaults` and asks before escalation. Explicit mappings pin the chosen
+strings independently of future preset changes. `escalation` accepts:
+
+- `auto`: move to the planning model when redesign is needed or the same
+  failure persists after two attempted fixes; report why, then return to the
+  implementation model once the revised plan is ready.
+- `ask` (default): ask before that escalation.
+- `never`: stop the blocked task rather than escalate. The scheduled final
+  review still uses the review model.
+
+This is an instruction-based policy, not a model-launching service. Setup
+renders agent-specific policy into managed context blocks. The workflow uses
+its supported model controls; if it cannot select a model, it requests a
+manual switch or supported replacement. It reports requested versus actual
+models where the host exposes them, and otherwise marks the actual model
+unverified. It never silently substitutes a model. For native controls see
+[Claude subagents](https://code.claude.com/docs/en/sub-agents) and
+[Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+Policies apply only to an already-engaged workflow and do not activate one.
+Omitting `modelPolicy`, using `{}`, or omitting a workflow/agent entry leaves
+that scope's existing selection unchanged. Rerun setup after adding or removing
+policies so the managed context blocks match; existing policy instructions
+also reread their config entry before each phase. Setup preserves an existing
+config, so edit it directly to change selections on subsequent runs. No
+workflow-owned state or globally installed skills are modified.
+
 ## Workflow
 
 1. Start each session by reading `HANDOFF.md` then

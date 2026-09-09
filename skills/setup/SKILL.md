@@ -49,6 +49,13 @@ use them throughout Phase 1:
      identifies repository-relative globs that activate the workflow; and
      `executionInstructions` is the ordered, tool-specific lifecycle the
      agent must follow.
+   - Ask whether to enable workflow model routing (default: disabled). If yes,
+     offer each enabled agent's `modelDefaults` as an editable balanced
+     preset, collect policies for the desired workflows and the escalation
+     choice (auto/ask/never; default ask), and include `modelPolicy` in the
+     same configuration object. Agents without defaults require explicit
+     model IDs available in their host. Show that this generates instructions,
+     with automatic selection dependent on the host/workflow's controls.
    - Ask one more question: "Also generate `docs/PROJECT_CONTEXT.md` now?
      (recommended if this is the first agent-sync setup for this repo)"
      (yes/no, default yes). Record the answer as `{GENERATE_PROJECT_CONTEXT}`.
@@ -146,6 +153,8 @@ order:
 
 For registry workflows and complete custom workflows, preserve every
 `executionInstructions` item verbatim and in registry/custom-object order.
+
+Resolve and validate the optional model policy in Phase 1B.1 before rendering.
 
 After every render input is resolved, construct the proposed managed block
 for every agent `contextFile` and `HANDOFF.md`, then classify every target
@@ -484,6 +493,83 @@ target and collect all approvals. Do not continue until `.agent-sync/config.json
 (existing, migrated, or proposed), every resolved agent `contextFile`,
 `HANDOFF.md`, and `.claude/settings.json` each has an original snapshot and a
 fully resolved staged disposition.
+
+### 1B.1 — optional workflow model policy
+
+Resolve optional `modelPolicy` from `{EFFECTIVE_CONFIG}`. Missing or `{}`
+means no model routing; preserve historical behavior and render no model-policy
+instructions. Never enable it merely because registry defaults exist.
+
+The schema is `modelPolicy[workflowId][agentId]`, where each agent policy is
+either `"balanced"` or an object with required `planning`,
+`implementation`, and `review` model strings and optional `escalation`.
+`escalation` is `"auto"`, `"ask"`, or `"never"`; omission means `"ask"`.
+`"balanced"` copies that agent's registry/custom `modelDefaults` and uses
+`"ask"`. Model strings are opaque IDs/aliases, not shell commands: require
+non-empty strings without whitespace, backticks, or control characters.
+Pass model IDs as structured arguments to exposed controls; never interpolate
+config values into shell command text.
+Reject unknown fields in a policy object, invalid types (including null),
+unknown/disabled workflow or agent IDs, and incomplete phase mappings before
+any writes. Empty workflow maps are valid and render nothing.
+
+Resolve `modelDefaults` and `modelSelectionInstructions` from the agent
+registry or inline custom agent object, never from hardcoded agent branches.
+A preset requires all three valid default model strings; if absent, report
+that explicit models are required. Optional selection instructions must be a
+non-empty string. Explicit phase objects replace the preset entirely; do not
+merge missing phases from defaults. Explicit objects work for any configured
+agent/workflow, including custom entries. Where selection instructions are
+absent, use: "Use only model-selection controls exposed by the current host;
+if none are available, request a manual model switch."
+
+For each resolved workflow/agent policy, render the following as an additional
+bullet in that agent's `agent-policy` managed block. For shared context files,
+label each bullet with its agent ID and say it applies only when running as
+that agent. Do not emit policies for agents assigned to other context files.
+No policy may activate a workflow: it applies only after the existing
+workflow gate has selected it, respecting the user's explicit opt-out.
+
+- For {WORKFLOW_ID}, when running as {AGENT_ID}, use planning={PLANNING_MODEL},
+  implementation={IMPLEMENTATION_MODEL}, review={REVIEW_MODEL},
+  escalation={ESCALATION}.
+  Read the matching entry in `.agent-sync/config.json` before each phase;
+  it is authoritative if changed since setup. Use the schema and resolution
+  rules above for that entry; a removed policy disables routing. A missing
+  preset definition or invalid entry requires correction before dispatch.
+  Planning includes discovery, design, plan writing, and substantive replanning.
+  Review includes task/spec/code reviews and the final whole-branch review.
+  Implementation includes coding and running the plan's checks only after
+  the workflow's plan approval/readiness gate is satisfied, with concrete
+  scope and acceptance checks. If the plan is absent or materially ambiguous,
+  return to planning before implementation. Model choice never skips tests,
+  approval gates, or required reviews.
+  {MODEL_SELECTION_INSTRUCTIONS}
+  Keep the workflow's official dispatch, prompts, tools, and reports. Apply
+  the model through that dispatch's supported controls; do not replace its
+  lifecycle or edit its owned state or installed skills. Do not change
+  global/default model settings for all phases.
+  If a selected model is unavailable, model selection is unsupported, or
+  host overrides conflict, report the requested model and the limitation
+  and request a supported replacement or manual switch before that phase.
+  Never claim a model switch without host evidence; report the requested
+  model and actual model if exposed, otherwise mark actual model unverified.
+  If implementation requires redesign or repeats the same failure after two
+  attempted fixes, use the planning model for diagnosis/replanning under
+  escalation=auto and report why. With escalation=ask, ask first; with
+  escalation=never, stop that task and report the blocker. Return to the
+  implementation model once the revised plan is ready. Final review always
+  uses the configured review model regardless of escalation.
+  Record routing decisions in the workflow's normal report if supported, or
+  the conversation; keep HANDOFF.md limited to task IDs.
+
+The text referring to schema rules must be self-contained in generated
+context files: render the compact schema, preset defaults for that agent,
+and validation/disabled-policy rules alongside the bullet (not a dangling
+reference to this command). Render resolved literal IDs, never placeholders.
+If the policy is removed on a later setup run, remove its generated bullets
+with the managed-block replacement. Report every resolved phase mapping and
+whether host selection remains unverified; setup is not a model smoke test.
 
 ### 1C — optional docs/PROJECT_CONTEXT.md generation
 

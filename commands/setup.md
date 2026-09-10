@@ -12,6 +12,12 @@ every conflict and approval. Hold all proposed bytes and each target's
 original byte snapshot in memory. If any validation, conflict, or required
 user decision remains unresolved, stop with no writes.
 
+Read the command arguments (`$ARGUMENTS` when supplied by the host).
+Accept only optional `--regenerate-context`; unknown arguments stop before
+writes. Set `{REGENERATE_CONTEXT}` to true only for that flag, otherwise false.
+The flag requests full context regeneration, including on repeat setup runs;
+it does not reopen configuration selection or change existing config values.
+
 ### 1A — resolve configuration
 
 Define `{EFFECTIVE_CONFIG}` and `{CONFIG_MIGRATION}` (initially none) once and
@@ -58,6 +64,7 @@ use them throughout Phase 1:
    - Ask one more question: "Also generate `docs/PROJECT_CONTEXT.md` now?
      (recommended if this is the first agent-sync setup for this repo)"
      (yes/no, default yes). Record the answer as `{GENERATE_PROJECT_CONTEXT}`.
+     If `--regenerate-context` was supplied, skip this question and set it to yes.
    - Build one configuration object from the selected agents and workflow
      tools, applying the omission and inline-object rules below.
      Assign that single validated object to `{EFFECTIVE_CONFIG}` before Phase
@@ -572,19 +579,17 @@ whether host selection remains unverified; setup is not a model smoke test.
 
 ### 1C — optional docs/PROJECT_CONTEXT.md generation
 
-Only run this section when `{GENERATE_PROJECT_CONTEXT}` is yes (first run
-only — never on a repeat run, even if the file is missing or the question
-would otherwise apply). Use the workflow-tool list already resolved and
-validated in Phase 1B, then perform the following self-contained preflight.
-When `{GENERATE_PROJECT_CONTEXT}` is no or this is not first-run, skip all of
-1C — do not create, touch, or classify `docs/PROJECT_CONTEXT.md`.
+Run this section when `{REGENERATE_CONTEXT}` is true (including repeat runs),
+or when first-run `{GENERATE_PROJECT_CONTEXT}` is yes. Otherwise skip 1C and
+leave the context file untouched. Use the already-resolved workflow list;
+hold context and backup writes for Phase 2 with all other setup targets.
 
 ### 1C.1 — inspect the project and detect commit policy
 
-For a missing `docs/PROJECT_CONTEXT.md`, inspect this repository yourself
-before writing anything — do not use placeholder text. For a managed or
-approved unrecognized file, preserve every byte outside the `project-policy`
-markers while replacing or inserting only that block:
+For a missing context or requested regeneration, inspect the repository
+before rendering; do not use placeholder text. Otherwise refresh only the
+managed policy and preserve all bytes outside its markers. Detection for a
+full render follows:
 
 - Read the relevant manifest, lockfile, README, task scripts, and CI config
   to identify purpose, runtime, package manager, and commands. Inspect only
@@ -640,7 +645,7 @@ Define the following values before rendering the `project-policy` block:
 Using the resolved configuration and commit policy, render the proposed
 `docs/PROJECT_CONTEXT.md` using the compact structure below.
 
-For a new file, aim for 80 lines; require at most 120 lines and 1,200 words
+For a new or regenerated file, aim for 80 lines; require at most 120 lines and 1,200 words
 (including the managed block). Keep only facts that change how an agent works.
 Omit empty sections, unknown/unused commands, placeholder comments, "none" or
 "not detected" filler, directory inventories, duplicate rules, session history,
@@ -689,19 +694,35 @@ coding principles, and the learning/context upkeep rules. Keep technical
 facts and lessons outside it. The principles apply to every configured agent,
 independent of workflow and model choice.
 
-Before applying a new file, count candidate lines and whitespace-delimited
+Before applying a new or regenerated file, count candidate lines and whitespace-delimited
 words. If over budget, remove repetition and link to existing detail, preserving
 all required policy. If required policy alone cannot fit, report the conflict
 before writing rather than silently dropping instructions.
 
-For an existing file, replace only the managed block; never apply the new
+Without regeneration, for an existing file, replace only the managed block; never apply the new
 template or size limit by deleting unmanaged content. Report an oversized
 existing file and offer a separate, explicitly requested cleanup. When the user
 requests that cleanup, retain unique actionable constraints and commands;
 remove obsolete, redundant, or historical material. Normal reruns must continue
 to preserve unmanaged bytes, even when they exceed the new budget.
 
-Classify `docs/PROJECT_CONTEXT.md` as:
+When `{REGENERATE_CONTEXT}` is true, an existing well-formed managed or
+unmarked file is eligible for full regeneration. Read its entire contents and
+rescan the repository. Carry forward still-valid project-specific constraints
+and lessons; remove duplicates, obsolete facts, and history. Do not silently
+discard a unique constraint merely to fit the size budget; report any
+unresolved conflict before writes. Show the proposed diff during preflight.
+The explicit flag authorizes this replacement; no second confirmation is
+needed. Malformed markers remain preserved with a reported defect.
+
+For each existing file staged for regeneration, reserve a unique missing path
+`.agent-sync/backups/PROJECT_CONTEXT.<unique-id>.md` during read-only preflight
+and stage an exact-byte backup of the original snapshot. Never overwrite an
+existing backup. A missing context needs creation, not a backup. Record
+`regenerated` as the disposition for an existing whole-file replacement.
+Apply the compact line/word budget to regenerated files as well as new files.
+
+Without a regeneration disposition, classify `docs/PROJECT_CONTEXT.md` as:
 - `missing`: stage creation of the full render.
 - `managed`: exactly one non-nested matching `project-policy` marker pair
   exists; stage replacement of the markers and all bytes between them while
@@ -738,32 +759,41 @@ targets.
 ## Phase 2 — apply the fully resolved preflight plan
 
 Immediately before the first write, confirm every target still matches its
-Phase 1 snapshot. If any target changed, stop before writes and restart the
+Phase 1 snapshot and any reserved backup path is still absent. If any target changed, stop before writes and restart the
 entire preflight. Otherwise apply the staged plan without further detection,
 rendering, classification, prompts, or user decisions:
 
+- If regenerating an existing context, create the reserved backup exclusively
+  and verify it matches the original snapshot before replacing the context.
+  If backup creation or verification fails, stop without replacing the context.
+  Never overwrite a backup that appeared after preflight.
 - Apply `{CONFIG_MIGRATION}` if one was staged (write `.agent-sync/config.json`,
   delete root `.agent-sync.json`); on first run, write the staged
   `.agent-sync/config.json`; otherwise preserve the existing configuration.
 - For each managed Markdown target (agent `contextFile`s, `HANDOFF.md`, and
   `docs/PROJECT_CONTEXT.md` if staged in 1C), perform its staged creation,
-  managed-block update, known-legacy migration, approved insertion, or
+  managed-block update, full regeneration, known-legacy migration, approved insertion, or
   byte-for-byte preservation exactly as classified.
 - Create `.claude/settings.json` when its staged disposition is `missing`; update it
   if missing vendor permission rules were merged; otherwise preserve it byte-for-byte.
 
 ## Phase 3 — verify and report every target
 
+For regeneration, verify the backup matches the preflight original and the
+entire context matches the staged full render; report `regenerated`, the
+backup path, and final line/word counts. Unmanaged-byte preservation applies
+only to ordinary refreshes, not explicitly requested full regeneration.
+
 Re-read every target after application: `.agent-sync/config.json`, every
 resolved agent `contextFile`, `HANDOFF.md`, `.claude/settings.json`, and
 `docs/PROJECT_CONTEXT.md` if it was generated in 1C. Compare each result with
 the staged bytes and original snapshot. Verify created files match their full
-render; updated managed files preserve all unmanaged bytes; migrated legacy
+render; ordinary managed-block updates preserve all unmanaged bytes; migrated legacy
 files match the proposed managed render; and preserved files, including
 declined unrecognized and malformed targets, remain byte-for-byte unchanged.
 Stop and report any mismatch.
 
-Report one disposition for every target: created, updated, migrated, or
+Report one disposition for every target: created, updated, regenerated, migrated, or
 preserved, including the reason for preservation. Report the config migration
 if one occurred. If `docs/PROJECT_CONTEXT.md` was generated in 1C, also report
 its commit-policy source and which sections came from real project signals

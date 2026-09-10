@@ -16,9 +16,7 @@
   "gemini": {
     "displayName": "Gemini",
     "contextFile": "GEMINI.md",
-    "supportsImports": false,
-    "modelDefaults": { "planning": "pro", "implementation": "flash", "review": "pro" },
-    "modelSelectionInstructions": "These aliases target Gemini CLI. Use its supported /model selector or --model option; do not assume that the host exposes per-subagent selection or that another Gemini application accepts CLI aliases."
+    "supportsImports": false
   },
   "cursor": {
     "displayName": "Cursor",
@@ -27,8 +25,10 @@
   },
   "antigravity": {
     "displayName": "Antigravity",
+    "modelDefaults": { "planning": "gemini-flash3.7", "implementation": "gemini-flash3.7", "review": "gemini-flash3.7" },
     "contextFile": "AGENTS.md",
-    "supportsImports": false
+    "supportsImports": false,
+    "modelSelectionInstructions": "Use gemini-flash3.7 for every workflow phase through Antigravity's exposed model controls. Treat this as a configured model ID, not a Gemini CLI alias. Verify availability in the current host; if unavailable or not selectable, request a supported replacement or manual switch rather than silently substituting another model."
   },
   "grok": {
     "displayName": "Grok",

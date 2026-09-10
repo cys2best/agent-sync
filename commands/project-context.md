@@ -7,6 +7,11 @@ allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 
 This entire phase is read-only: do not create or modify any file.
 
+Read the command arguments (`$ARGUMENTS` when supplied by the host).
+Accept only optional `--regenerate`; unknown arguments stop before writes.
+Set `{REGENERATE_CONTEXT}` to true only for that flag, otherwise false.
+Without it, existing files receive only a managed-policy refresh.
+
 ### 1A — resolve configuration
 
 1. If `.agent-sync/config.json` exists, read it into `{EFFECTIVE_CONFIG}` and
@@ -33,10 +38,10 @@ report the workflow id and invalid field, then stop before writes.
 
 ### 1C — inspect the project and detect commit policy
 
-For a missing `docs/PROJECT_CONTEXT.md`, inspect this repository yourself
-before writing anything — do not use placeholder text. For a managed or
-approved unrecognized file, preserve every byte outside the `project-policy`
-markers while replacing or inserting only that block:
+For a missing context or requested regeneration, inspect the repository
+before rendering; do not use placeholder text. Otherwise refresh only the
+managed policy and preserve all bytes outside its markers. Detection for a
+full render follows:
 
 - Read the relevant manifest, lockfile, README, task scripts, and CI config
   to identify purpose, runtime, package manager, and commands. Inspect only
@@ -92,7 +97,7 @@ Define the following values before rendering the `project-policy` block:
 Using the resolved configuration and commit policy, render the proposed
 `docs/PROJECT_CONTEXT.md` using the compact structure below.
 
-For a new file, aim for 80 lines; require at most 120 lines and 1,200 words
+For a new or regenerated file, aim for 80 lines; require at most 120 lines and 1,200 words
 (including the managed block). Keep only facts that change how an agent works.
 Omit empty sections, unknown/unused commands, placeholder comments, "none" or
 "not detected" filler, directory inventories, duplicate rules, session history,
@@ -141,19 +146,35 @@ coding principles, and the learning/context upkeep rules. Keep technical
 facts and lessons outside it. The principles apply to every configured agent,
 independent of workflow and model choice.
 
-Before applying a new file, count candidate lines and whitespace-delimited
+Before applying a new or regenerated file, count candidate lines and whitespace-delimited
 words. If over budget, remove repetition and link to existing detail, preserving
 all required policy. If required policy alone cannot fit, report the conflict
 before writing rather than silently dropping instructions.
 
-For an existing file, replace only the managed block; never apply the new
+Without regeneration, for an existing file, replace only the managed block; never apply the new
 template or size limit by deleting unmanaged content. Report an oversized
 existing file and offer a separate, explicitly requested cleanup. When the user
 requests that cleanup, retain unique actionable constraints and commands;
 remove obsolete, redundant, or historical material. Normal reruns must continue
 to preserve unmanaged bytes, even when they exceed the new budget.
 
-Classify `docs/PROJECT_CONTEXT.md` the same way as any managed target:
+When `{REGENERATE_CONTEXT}` is true, an existing well-formed managed or
+unmarked file is eligible for full regeneration. Read its entire contents and
+rescan the repository. Carry forward still-valid project-specific constraints
+and lessons; remove duplicates, obsolete facts, and history. Do not silently
+discard a unique constraint merely to fit the size budget; report any
+unresolved conflict before writes. Show the proposed diff during preflight.
+The explicit flag authorizes this replacement; no second confirmation is
+needed. Malformed markers remain preserved with a reported defect.
+
+For each existing file staged for regeneration, reserve a unique missing path
+`.agent-sync/backups/PROJECT_CONTEXT.<unique-id>.md` during read-only preflight
+and stage an exact-byte backup of the original snapshot. Never overwrite an
+existing backup. A missing context needs creation, not a backup. Record
+`regenerated` as the disposition for an existing whole-file replacement.
+Apply the compact line/word budget to regenerated files as well as new files.
+
+Without a regeneration disposition, classify `docs/PROJECT_CONTEXT.md` as:
 `missing` (stage creation), `managed` (exactly one non-nested marker pair —
 stage replacement of markers and bytes between them), `unrecognized`
 (unmarked content — show proposed block, ask before inserting after a
@@ -185,23 +206,32 @@ a fully resolved staged disposition.
 ## Phase 2 — apply the fully resolved preflight plan
 
 Immediately before the first write, confirm every target still matches its
-Phase 1 snapshot. If any target changed, stop before writes and restart the
+Phase 1 snapshot and any reserved backup path is still absent. If any target changed, stop before writes and restart the
 entire preflight. Otherwise apply the staged plan:
 
+- If regenerating an existing context, create the reserved backup exclusively
+  and verify it matches the original snapshot before replacing the context.
+  If backup creation or verification fails, stop without replacing the context.
+  Never overwrite a backup that appeared after preflight.
 - Apply `{CONFIG_MIGRATION}` if one was staged.
-- Perform `docs/PROJECT_CONTEXT.md`'s staged creation, managed-block update,
+- Perform `docs/PROJECT_CONTEXT.md`'s staged creation, managed-block update, full regeneration,
   approved insertion, or byte-for-byte preservation exactly as classified.
 
 ## Phase 3 — verify and report
 
+For regeneration, verify the backup matches the preflight original and the
+entire context matches the staged full render; report `regenerated`, the
+backup path, and final line/word counts. Unmanaged-byte preservation applies
+only to ordinary refreshes, not explicitly requested full regeneration.
+
 Re-read `.agent-sync/config.json` and `docs/PROJECT_CONTEXT.md` after
 application. Compare each result with the staged bytes and original snapshot.
-Verify a created file matches its full render, an updated managed file
+Verify a created file matches its full render, an ordinary managed-block update
 preserves all unmanaged bytes, and a preserved file (including declined
 unrecognized or malformed) remains byte-for-byte unchanged. Stop and report
 any mismatch.
 
-Report the disposition (created, updated, or preserved, with reason), the
+Report the disposition (created, updated, regenerated, or preserved, with reason), the
 config migration if one occurred, the detected commit-policy source, any
 rejected outside-root commit template, and which project-context sections
 came from real project signals and any essential gaps, plus line/word counts

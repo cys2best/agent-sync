@@ -80,7 +80,7 @@ agents that share a context file, such as Codex, Antigravity, and Grok sharing
 and `.claude/settings.json` (scaffolding `permissions.ask` for discovered vendor
 directories).
 
-Re-running is safe. Generated policy is confined to managed blocks, so a
+Re-running without regeneration is safe. Generated policy is confined to managed blocks, so a
 rerun replaces only those blocks and preserves surrounding content. It safely
 migrates only recognized historical renderings; unrecognized or malformed
 files are left for review rather than overwritten. A pre-existing root
@@ -94,8 +94,8 @@ refresh agent-sync's managed project-policy block, run:
 /agent-sync:project-context
 ```
 
-It performs full repository detection and rendering only when the file is
-missing:
+It performs full repository detection and rendering when the file is
+missing or `--regenerate` is supplied:
 it inspects package manifests, lockfiles, README, test/lint config, git log,
 and `.gitignore`, and auto-discovers dependency and vendor directories
 (`node_modules`, `vendor`, `.venv`, etc.), then writes real content instead of a
@@ -113,13 +113,31 @@ state meaningful assumptions before coding, choose the simplest sufficient
 implementation, and keep changes confined to the requested work. These apply
 to all configured agents and models and refresh with the managed policy block.
 
-On a rerun, ownership is
+On a rerun without `--regenerate`, ownership is
 deliberately narrower: it refreshes only the managed `project-policy` block and
 preserves every byte outside that block. Technical context, architecture notes,
 and other user-maintained sections are therefore not automatically refreshed
 after stack changes. An oversized existing file is reported, not automatically
-trimmed; request a separate cleanup to remove redundant or obsolete content.
+trimmed.
 Requires `/agent-sync:setup` to have run at least once.
+
+To rescan the repository and replace an existing context with the compact
+template, run either command:
+
+```text
+/agent-sync:project-context --regenerate
+/agent-sync:setup --regenerate-context
+```
+
+Both retain still-valid project constraints and lessons, remove redundant or
+obsolete content, and show the proposed diff before applying it. The flag
+authorizes whole-file replacement, including content outside managed markers.
+The original is saved byte-for-byte to a unique
+`.agent-sync/backups/PROJECT_CONTEXT.<unique-id>.md` before replacement; the
+command reports that path so you can recover it. Broken markers are preserved
+and reported. Without the flag, existing preservation behavior is unchanged.
+The setup flag also works on repeat runs and leaves existing configuration
+choices intact.
 
 `HANDOFF.md` grows every session. To move finished plans' entries out into
 `.agent-sync/HANDOFF.archive.md` and keep the active log short, run:
@@ -138,11 +156,11 @@ in `HANDOFF.md` until both are finished.
 To spend more reasoning on planning and review, add optional `modelPolicy`
 to `.agent-sync/config.json`, then rerun `/agent-sync:setup`. Existing agents
 and workflows stay as configured; policy keys must reference enabled IDs.
-For example, a project using Claude Code and Codex with Superpowers can use:
+For example, a project using Claude Code, Codex, and Antigravity can use:
 
 ```json
 {
-  "agents": ["claude", "codex"],
+  "agents": ["claude", "codex", "antigravity"],
   "workflowTools": ["superpowers"],
   "modelPolicy": {
     "superpowers": {
@@ -157,6 +175,12 @@ For example, a project using Claude Code and Codex with Superpowers can use:
         "implementation": "gpt-5.6-luna",
         "review": "gpt-5.6-sol",
         "escalation": "ask"
+      },
+      "antigravity": {
+        "planning": "gemini-flash3.7",
+        "implementation": "gemini-flash3.7",
+        "review": "gemini-flash3.7",
+        "escalation": "ask"
       }
     }
   }
@@ -169,19 +193,25 @@ test execution use `implementation` once the plan is ready; task reviews and
 the final branch review use `review`. All three model strings are required
 for an explicit policy. They may be supported aliases or exact model IDs.
 
-Suggested pairings, checked against official documentation on 2026-09-10:
+Bundled presets (Claude/Codex checked against official documentation on
+2026-09-10; Antigravity uses the project-selected ID):
 
 | Agent | Planning and review | Implementation | Source |
 | --- | --- | --- | --- |
 | Claude Code | `sonnet` | `haiku` | [Claude model selection](https://code.claude.com/docs/en/sub-agents#choose-a-model) |
 | Codex | `gpt-5.6-sol` | `gpt-5.6-luna` | [OpenAI model guidance](https://learn.chatgpt.com/docs/models) |
-| Gemini CLI | `pro` | `flash` | [Gemini CLI aliases](https://geminicli.com/docs/cli/cli-reference/#model-selection) |
+| Antigravity | `gemini-flash3.7` | `gemini-flash3.7` | Project-selected model ID; availability checked in the host |
 
 Use stronger implementation models for work that still needs substantial
-design judgment. Cursor, Antigravity, Grok, and custom agents accept explicit
+design judgment. Cursor, Gemini CLI, Grok, and custom agents accept explicit
 phase mappings, but have no bundled preset: select IDs supported by the
-particular host and account. Gemini CLI aliases are not assumed to work in
-Antigravity. Model availability must be checked in the running host.
+particular host and account. The legacy `gemini` agent ID remains supported,
+but its bundled model preset has been replaced by Antigravity's. Existing
+`gemini: "balanced"` policies must be changed to explicit model mappings or
+moved to an enabled `antigravity` entry. Antigravity defaults to the exact
+`gemini-flash3.7` string for all phases, including diagnosis and review; this
+is a requested configuration value, not a verified provider alias. Model
+availability must be checked in the running host.
 
 An agent policy can also be `"balanced"`, which uses its registry
 `modelDefaults` and asks before escalation. Explicit mappings pin the chosen

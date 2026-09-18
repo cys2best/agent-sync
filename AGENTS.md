@@ -7,9 +7,10 @@ shared files below so other agents see the same thing.
 See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
+- AGENTS.local.md — local private notes and personal overrides (gitignored)
 
 (Codex, Antigravity do not support `@path` imports like Claude Code does —
-read both files above manually at the start of every session, or wire
+read the files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
 
 ## Codex, Antigravity specific
@@ -33,8 +34,10 @@ this into a startup script if your setup supports one.)
   verification and report. A prompt that doesn't mention a workflow tool gets
   a direct, ordinary execution path — do not route it through a workflow tool
   on your own inference.
-- Claim a task by adding an entry to `HANDOFF.md` using your active agent identifier:
-  `Claiming plan-name/task-N — <agent-id>` (use codex/antigravity depending on which agent you are running as)
+- When claiming or progressing a plan task, update that plan's entry in
+  `HANDOFF.md` in-place (or add an entry if starting a new plan): record your
+  active agent identifier (use codex/antigravity depending on which agent you
+  are running as), current task, finished tasks, next task, and blockers.
 - Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
   names a repository policy file, read that source too. Follow its format and
   examples. Keep plan names, task numbers, agent identity, and AI-attribution
@@ -42,7 +45,6 @@ this into a startup script if your setup supports one.)
   traceability.
 - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
   commits or PRs. Disable auto-attribution in your respective agent config.
-- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
-  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
-  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
+- Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
+  task IDs only. Do not add entries for idle sessions where no tasks progressed.
 <!-- agent-sync:agent-policy:end -->

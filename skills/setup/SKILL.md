@@ -283,8 +283,9 @@ Resolve the per-file title, section, claim rule, and attribution rule based on `
   - `{AGENT_SECTION}`: `## {AGENT_NAME} specific`
   - `{CLAIM_RULE}`:
     ```
-    - Claim a task by adding an entry to `HANDOFF.md`:
-      `Claiming plan-name/task-N — {AGENT_ID}`
+    - When claiming or progressing a plan task, update that plan's entry in
+      `HANDOFF.md` in-place (or add an entry if starting a new plan): record
+      `{AGENT_ID}`, current task, finished tasks, next task, and blockers.
     ```
   - `{ATTRIBUTION_RULE}`:
     ```
@@ -298,8 +299,10 @@ Resolve the per-file title, section, claim rule, and attribution rule based on `
   - `{AGENT_SECTION}`: `## {AGENT_NAMES_JOINED} specific`
   - `{CLAIM_RULE}`:
     ```
-    - Claim a task by adding an entry to `HANDOFF.md` using your active agent identifier:
-      `Claiming plan-name/task-N — <agent-id>` (use {AGENT_IDS_SLASH} depending on which agent you are running as)
+    - When claiming or progressing a plan task, update that plan's entry in
+      `HANDOFF.md` in-place (or add an entry if starting a new plan): record
+      your active agent identifier (use {AGENT_IDS_SLASH} depending on which agent you are running as),
+      current task, finished tasks, next task, and blockers.
     ```
   - `{ATTRIBUTION_RULE}`:
     ```
@@ -335,9 +338,8 @@ shared files below so other agents see the same thing.
   out of the commit message; workflow state and `HANDOFF.md` retain task
   traceability.
 {ATTRIBUTION_RULE}
-- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
-  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
-  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
+- Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
+  task IDs only. Do not add entries for idle sessions where no tasks progressed.
 <!-- agent-sync:agent-policy:end -->
 ```
 
@@ -380,6 +382,7 @@ in its place).
 ```
 @docs/PROJECT_CONTEXT.md
 @HANDOFF.md
+@AGENTS.local.md
 ```
 
 `{IMPORT_BLOCK}`, when `supportsImports` is false:
@@ -388,9 +391,10 @@ in its place).
 See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
+- AGENTS.local.md — local private notes and personal overrides (gitignored)
 
 ({AGENT_NAME} doesn't support `@path` imports like Claude Code does —
-read both files above manually at the start of every session, or wire
+read the files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
 ```
 - When `{TARGET_AGENTS}` has length > 1:
@@ -398,9 +402,10 @@ this into a startup script if your setup supports one.)
 See:
 - docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
 - HANDOFF.md — the running log between agents, per plan/task
+- AGENTS.local.md — local private notes and personal overrides (gitignored)
 
 ({AGENT_NAMES_JOINED} do not support `@path` imports like Claude Code does —
-read both files above manually at the start of every session, or wire
+read the files above manually at the start of every session, or wire
 this into a startup script if your setup supports one.)
 ```
 
@@ -418,13 +423,14 @@ entry outside it:
 <!-- Keep entries minimal: task IDs only. Do not write summaries or progress prose here
      — detailed briefs, reports, and reviews belong in your workflow tool (e.g. .superpowers/sdd/). -->
 
-Plan/task identifiers belong here and in workflow state, not in commit subjects.
+Active plans and current task state. Each plan has at most one entry, updated in-place as work progresses.
+Do not log idle sessions or append duplicate historical entries.
 
-## Template for new entries
+## Template for active plan entry
 \`\`\`
-### YYYY-MM-DD HH:MM — [{AGENT_IDS_PIPE}]
+### [plan-name] — [{AGENT_IDS_PIPE}] (YYYY-MM-DD HH:MM)
 - Claiming: plan-name/task-N
-- Finished: plan-name/task-N
+- Finished: plan-name/task-M (or none)
 - Next: plan-name/task-K (or none)
 - Blockers: none (or 1-line reason)
 \`\`\`

@@ -13,3 +13,7 @@
 # Python test cache
 __pycache__/
 *.pyc
+
+# Local private notes
+*.local.md
+.local.md

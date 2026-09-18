@@ -246,8 +246,8 @@ workflow-owned state or globally installed skills are modified.
 1. Start each session by reading `HANDOFF.md` then
    `docs/PROJECT_CONTEXT.md` (agents with `@path` import support, like
    Claude Code, do this automatically).
-2. Claim a task by adding a line to `HANDOFF.md`:
-   `Claiming plan-name/task-N — <agent-id>`.
+2. Claim a task by updating that plan's entry in `HANDOFF.md` in-place
+   (or creating an entry if starting a new plan): `Claiming: plan-name/task-N`.
 3. Before plan-scoped work, inspect each configured workflow's activation
    signals and owned state. If a task is activated, follow that workflow's
    official lifecycle, including final verification and its report. Never
@@ -265,9 +265,9 @@ workflow-owned state or globally installed skills are modified.
    subjects.
 6. Every SDD task, including final verification, needs its
    workflow-generated brief and report.
-7. At session end, append a compact handoff entry to `HANDOFF.md` with task IDs
-   only (`plan-name/task-N` or `none`) — rich execution details belong in workflow
-   state (e.g. `.superpowers/sdd/`).
+7. At session end, update the plan's entry in `HANDOFF.md` in-place with task IDs
+   only (`plan-name/task-N`) — rich execution details belong in workflow
+   state (e.g. `.superpowers/sdd/`). Do not add entries for idle sessions.
 
 ## Notes
 

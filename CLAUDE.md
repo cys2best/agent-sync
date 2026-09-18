@@ -6,6 +6,7 @@ shared files below so other agents see the same thing.
 
 @docs/PROJECT_CONTEXT.md
 @HANDOFF.md
+@AGENTS.local.md
 
 ## Claude Code specific
 - Only engage Superpowers when the user's prompt explicitly names it
@@ -28,8 +29,9 @@ shared files below so other agents see the same thing.
   verification and report. A prompt that doesn't mention a workflow tool gets
   a direct, ordinary execution path — do not route it through a workflow tool
   on your own inference.
-- Claim a task by adding an entry to `HANDOFF.md`:
-  `Claiming plan-name/task-N — claude`
+- When claiming or progressing a plan task, update that plan's entry in
+  `HANDOFF.md` in-place (or add an entry if starting a new plan): record
+  `claude`, current task, finished tasks, next task, and blockers.
 - Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
   names a repository policy file, read that source too. Follow its format and
   examples. Keep plan names, task numbers, agent identity, and AI-attribution
@@ -39,7 +41,6 @@ shared files below so other agents see the same thing.
   commits or PRs. If this agent's setup has an equivalent
   auto-attribution behavior, disable it the same way
   `.claude/settings.json` does for Claude Code.
-- At the end of a session, append a handoff entry to `HANDOFF.md` with task IDs
-  only (e.g. `plan-name/task-N` or `none`). Do not write summaries or progress
-  prose here — rich execution details belong in your workflow tool (e.g. `.superpowers/sdd/`).
+- Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
+  task IDs only. Do not add entries for idle sessions where no tasks progressed.
 <!-- agent-sync:agent-policy:end -->

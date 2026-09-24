@@ -41,6 +41,9 @@ export function initializeSchema(db: Database): void {
       created_at INTEGER NOT NULL
     );
 
+    CREATE INDEX IF NOT EXISTS idx_sessions_project_started ON sessions(project_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_observations_project_created ON observations(project_id, created_at DESC);
+
     CREATE VIRTUAL TABLE IF NOT EXISTS observations_fts USING fts5(
       id UNINDEXED,
       session_id UNINDEXED,

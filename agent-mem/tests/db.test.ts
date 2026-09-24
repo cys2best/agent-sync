@@ -6,6 +6,7 @@ import {
   getObservationById,
   getRecentObservations,
   getRecentSessions,
+  insertEvent,
   insertObservation,
   insertSession,
   searchObservations,
@@ -176,6 +177,32 @@ describe("database operations", () => {
     expect(searchObservations(db, "ephemeral", "proj_1").length).toBe(0);
   });
 
+  it("inserts and stores events", () => {
+    upsertProject(db, { id: "proj_1", name: "test-proj", rootPath: "/test/path" });
+    insertSession(db, {
+      id: "ses_1",
+      projectId: "proj_1",
+      agentType: "claude",
+      startedAt: 1000,
+      status: "active",
+    });
+
+    insertEvent(db, {
+      id: "evt_1",
+      sessionId: "ses_1",
+      projectId: "proj_1",
+      eventType: "tool_call",
+      timestamp: 1500,
+      data: JSON.stringify({ tool: "view_file", path: "src/db/client.ts" }),
+    });
+
+    const row = db.prepare("SELECT * FROM events WHERE id = ?").get("evt_1") as any;
+    expect(row).not.toBeNull();
+    expect(row.event_type).toBe("tool_call");
+    expect(row.timestamp).toBe(1500);
+    expect(JSON.parse(row.data).tool).toBe("view_file");
+  });
+
   it("openDatabase opens and initializes schema", () => {
     const memoryDb = openDatabase(":memory:");
     try {
@@ -183,6 +210,63 @@ describe("database operations", () => {
       const row = memoryDb.prepare("SELECT * FROM projects WHERE id = ?").get("proj_mem") as any;
       expect(row).not.toBeNull();
       expect(row.name).toBe("memory-proj");
+    } finally {
+      memoryDb.close();
+    }
+  });
+
+  it("enforces foreign keys and cascades deletions via openDatabase", () => {
+    const memoryDb = openDatabase(":memory:");
+    try {
+      // Inserting session without existing project should fail foreign key constraint
+      expect(() => {
+        insertSession(memoryDb, {
+          id: "ses_orphaned",
+          projectId: "nonexistent_proj",
+          agentType: "claude",
+          startedAt: 1000,
+          status: "active",
+        });
+      }).toThrow();
+
+      // Create project, session, observation, event
+      upsertProject(memoryDb, { id: "proj_fk", name: "fk-test", rootPath: "/fk/path" });
+      insertSession(memoryDb, {
+        id: "ses_fk",
+        projectId: "proj_fk",
+        agentType: "claude",
+        startedAt: 1000,
+        status: "active",
+      });
+      insertObservation(memoryDb, {
+        id: "obs_fk",
+        sessionId: "ses_fk",
+        projectId: "proj_fk",
+        type: "note",
+        summary: "Cascade test note",
+        content: "Content to cascade delete",
+        tokensApprox: 10,
+        createdAt: 1000,
+      });
+      insertEvent(memoryDb, {
+        id: "evt_fk",
+        sessionId: "ses_fk",
+        projectId: "proj_fk",
+        eventType: "message",
+        timestamp: 1000,
+        data: "{}",
+      });
+
+      expect(getRecentSessions(memoryDb, "proj_fk", 1).length).toBe(1);
+      expect(getObservationById(memoryDb, "obs_fk")).not.toBeNull();
+
+      // Deleting project should cascade delete sessions, observations, and events
+      memoryDb.prepare("DELETE FROM projects WHERE id = ?").run("proj_fk");
+
+      expect(getRecentSessions(memoryDb, "proj_fk", 1).length).toBe(0);
+      expect(getObservationById(memoryDb, "obs_fk")).toBeNull();
+      const eventRow = memoryDb.prepare("SELECT * FROM events WHERE id = ?").get("evt_fk");
+      expect(eventRow).toBeNull();
     } finally {
       memoryDb.close();
     }

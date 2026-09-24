@@ -10,7 +10,7 @@
 
 When working with autonomous coding agents (Claude Code, Antigravity, Codex) across projects and long-running sessions, context between sessions is typically lost ("agent amnesia") or depends on manual maintenance of static log files like `HANDOFF.md`.
 
-`agent-mem` is a lightweight, zero-external-LLM-cost, standalone persistent memory system built with **Bun** and **SQLite (FTS5)**. It captures raw agent actions, tool outputs, and user prompts per project, redacts sensitive information, provides an interactive real-time Web Viewer UI, and automatically injects a compact project digest on session startup to replace manual handoff routines.
+`agent-mem` is a lightweight, zero-external-LLM-cost persistent memory subsystem integrated directly into this repository (`superpower-dual-agents`). Built with **Bun** and **SQLite (FTS5)** under `agent-mem/`, it captures raw agent actions, tool outputs, and user prompts per project, redacts sensitive information, provides an interactive real-time Web Viewer UI, and automatically injects a compact project digest on session startup to replace manual handoff routines.
 
 ### Key Objectives
 1. **Persistent Memory Across Sessions:** Project context, recent decisions, file diffs, and tool results survive across agent reboots and switches.
@@ -19,7 +19,7 @@ When working with autonomous coding agents (Claude Code, Antigravity, Codex) acr
 4. **Deterministic Citations:** Every observation has a stable ID (`obs_xxxx`) that agents can cite and retrieve on demand.
 5. **Real-Time Web Viewer UI:** Zero-build single-page web dashboard using Server-Sent Events (SSE) to observe cross-agent activity live at `http://localhost:3777`.
 6. **Privacy First:** Multi-line `<private>...</private>` tags and common credential patterns are stripped before storage.
-7. **Cross-Agent Support:** Integrates seamlessly with Claude Code (plugin hooks), Antigravity, and Codex via standard CLI hooks and skills.
+7. **Native In-Repo Integration:** Packaged cleanly within `agent-mem/`, exposed via plugin hooks (`.claude-plugin/hooks.json`) and native skill (`skills/mem-search/`).
 
 ---
 
@@ -34,12 +34,13 @@ When working with autonomous coding agents (Claude Code, Antigravity, Codex) acr
                │ (prompt, tool call, response) │ (Digest, citations)
                ▼                               │
 ┌──────────────────────────────────────────────────────────────┐
-│                    agent-mem CLI / Hooks                     │
+│              agent-mem CLI / Hook Runner                     │
+│                (agent-mem/bin/agent-mem.ts)                  │
 └──────────────┬───────────────────────────────▲───────────────┘
                │ HTTP (localhost:3777) / IPC   │
                ▼                               │
 ┌──────────────────────────────────────────────────────────────┐
-│              agent-mem Daemon (Bun.serve)                     │
+│         agent-mem Background Daemon (Bun.serve)              │
 │  ┌───────────────────────┐       ┌────────────────────────┐  │
 │  │ Privacy & Redactor    │       │ Digest / Context Gen   │  │
 │  └──────────┬────────────┘       └───────────▲────────────┘  │
@@ -56,13 +57,13 @@ When working with autonomous coding agents (Claude Code, Antigravity, Codex) acr
 ```
 
 ### Component Breakdown
-1. **Background Daemon (`src/daemon/server.ts`):** Lightweight HTTP server running on Bun (`Bun.serve`), listening on port 3777 (configurable). Handles ingestion endpoints, query APIs, SSE broadcasts, and static Web Viewer assets.
-2. **Storage Engine (`src/db/`):** Backed by Bun's native SQLite (`bun:sqlite`). Stores structured entities and an FTS5 virtual table for lightning-fast keyword and full-text searches.
-3. **Privacy Redactor (`src/privacy/redactor.ts`):** Pre-ingestion sanitizer stripping `<private>` tags and scrubbing credential patterns before database writes.
-4. **Context Digest Generator (`src/context/digest.ts`):** Formats recent sessions and pending state into a concise markdown snippet suitable for direct session startup injection.
-5. **Universal Hook CLI (`bin/agent-mem.ts`):** Subcommands (`hook`, `start`, `stop`, `search`, `get`, `ui`) providing a standardized bridge for any agent.
+1. **Background Daemon (`agent-mem/src/daemon/server.ts`):** Lightweight HTTP server running on Bun (`Bun.serve`), listening on port 3777 (configurable). Handles ingestion endpoints, query APIs, SSE broadcasts, and static Web Viewer assets.
+2. **Storage Engine (`agent-mem/src/db/`):** Backed by Bun's native SQLite (`bun:sqlite`). Stores structured entities and an FTS5 virtual table for lightning-fast keyword and full-text searches.
+3. **Privacy Redactor (`agent-mem/src/privacy/redactor.ts`):** Pre-ingestion sanitizer stripping `<private>` tags and scrubbing credential patterns before database writes.
+4. **Context Digest Generator (`agent-mem/src/context/digest.ts`):** Formats recent sessions and pending state into a concise markdown snippet suitable for direct session startup injection.
+5. **Universal Hook CLI (`agent-mem/bin/agent-mem.ts`):** Subcommands (`hook`, `start`, `stop`, `search`, `get`, `ui`) providing a standardized bridge for any agent.
 6. **Agent Skill (`skills/mem-search/SKILL.md`):** Portable skill definition teaching agents how and when to invoke `mem-search` and `mem-get`.
-7. **Web Viewer UI (`src/ui/index.html`):** Self-contained, zero-npm-build web dashboard receiving SSE updates.
+7. **Web Viewer UI (`agent-mem/src/ui/index.html`):** Self-contained, zero-npm-build web dashboard receiving SSE updates.
 
 ---
 
@@ -71,7 +72,7 @@ When working with autonomous coding agents (Claude Code, Antigravity, Codex) acr
 ### Database Location & Scoping
 - Default global database: `~/.agent-mem/mem.db`.
 - Project scoping: Every project is keyed by a canonical identifier (`project_id`), derived from git root or working directory hash.
-- Repository-local override: If `.agent-mem/mem.db` exists in the current project root, the daemon routes queries for that project to the local database file.
+- Repository-local override: If `.agent-mem/mem.db` exists in the local project root, the daemon routes queries for that project to the local database file.
 
 ### SQLite Schema
 
@@ -176,7 +177,7 @@ The CLI provides `agent-mem hook <event>`:
 Delivered at `session-start`, ~150-200 tokens:
 ```markdown
 === AGENT-MEM: PROJECT MEMORY ===
-Project: my-project | Live Viewer: http://localhost:3777/p/my-project
+Project: superpower-dual-agents | Live Viewer: http://localhost:3777/p/superpower-dual-agents
 Recent Activity:
 • [ses_01...] (claude, 2h ago): Implemented Bun SQLite migrations and tests
   Files touched: src/db/schema.ts, tests/db.test.ts (tests passing)
@@ -190,7 +191,7 @@ Tip: Search past observations with `mem-search <query>` or open the Live Viewer.
 ```
 
 ### Search Interface (Tier 2)
-- Command: `agent-mem search <query> [--limit 5]`
+- Command: `bun run agent-mem/bin/agent-mem.ts search <query> [--limit 5]` (or skill `mem-search`)
 - Queries `observations_fts` joined with `sessions` to return ranked results with token counts:
 ```
 Found 2 matches for 'auth middleware':
@@ -203,7 +204,7 @@ Found 2 matches for 'auth middleware':
 ```
 
 ### Observation Retrieval (Tier 3)
-- Command: `agent-mem get <observation_id>`
+- Command: `bun run agent-mem/bin/agent-mem.ts get <observation_id>` (or skill `mem-get`)
 - Fetches the full raw observation content corresponding to the citation ID.
 
 ---
@@ -221,42 +222,49 @@ Found 2 matches for 'auth middleware':
 
 ---
 
-## 7. Project Structure & Organization
+## 7. Repository Layout & Integration
 
 ```
-agent-mem/
-├── package.json
-├── tsconfig.json
-├── README.md
-├── bin/
-│   └── agent-mem.ts           # CLI entry point (start, stop, hook, search, get, ui)
-├── src/
-│   ├── config.ts              # Config paths, default port 3777, token limits
-│   ├── db/
-│   │   ├── client.ts          # bun:sqlite connection & path resolution
-│   │   ├── schema.ts          # SQLite DDL + FTS5 virtual tables
-│   │   └── queries.ts         # Sessions, events, FTS search, and citation lookups
-│   ├── daemon/
-│   │   ├── server.ts          # Bun.serve HTTP API & router
-│   │   ├── sse.ts             # SSE connection pool for live browser updates
-│   │   └── lifecycle.ts       # Daemon supervisor, PID file, auto-spawn lock
-│   ├── privacy/
-│   │   └── redactor.ts        # <private> regex tag stripper and secret masking
-│   ├── context/
-│   │   └── digest.ts          # Compact Project Digest generator (handoff replacement)
-│   └── ui/
-│       └── index.html         # Embedded zero-build reactive Web Viewer with SSE
+superpower-dual-agents/
+├── plugin.json                 # Claude Code plugin descriptor
+├── .claude-plugin/
+│   └── hooks.json              # Plugin lifecycle hooks (session-start, post-tool, session-end)
 ├── skills/
-│   └── mem-search/
-│       └── SKILL.md           # Universal skill file for Claude Code & Antigravity
-├── hooks/
-│   ├── claude-code/           # Claude Code hook configs (.claude-plugin hooks)
-│   └── shims/                 # Shell hook scripts for Antigravity & Codex
-└── tests/
-    ├── redactor.test.ts       # Privacy tag stripping & secret masking tests
-    ├── db.test.ts             # SQLite FTS5 search & citation lookup tests
-    ├── digest.test.ts         # Compact digest formatting & token limits tests
-    └── server.test.ts         # HTTP API, hook ingestion, and SSE broadcast tests
+│   ├── archive-handoff/
+│   ├── project-context/
+│   ├── setup/
+│   └── mem-search/             # Memory search & citation inspection skill
+│       └── SKILL.md
+├── agent-mem/                  # Standalone Bun package in this repo
+│   ├── package.json
+│   ├── tsconfig.json
+│   ├── README.md
+│   ├── bin/
+│   │   └── agent-mem.ts        # CLI entry point (start, stop, hook, search, get, ui)
+│   ├── src/
+│   │   ├── config.ts           # Config paths, default port 3777, token limits
+│   │   ├── db/
+│   │   │   ├── client.ts       # bun:sqlite connection & path resolution
+│   │   │   ├── schema.ts       # SQLite DDL + FTS5 virtual tables
+│   │   │   └── queries.ts      # Sessions, events, FTS search, and citation lookups
+│   │   ├── daemon/
+│   │   │   ├── server.ts       # Bun.serve HTTP API & router
+│   │   │   ├── sse.ts          # SSE connection pool for live browser updates
+│   │   │   └── lifecycle.ts    # Daemon supervisor, PID file, auto-spawn lock
+│   │   ├── privacy/
+│   │   │   └── redactor.ts     # <private> regex tag stripper and secret masking
+│   │   ├── context/
+│   │   │   └── digest.ts       # Compact Project Digest generator (handoff replacement)
+│   │   └── ui/
+│   │       └── index.html      # Embedded zero-build reactive Web Viewer with SSE
+│   └── tests/
+│       ├── redactor.test.ts    # Privacy tag stripping & secret masking tests
+│       ├── db.test.ts          # SQLite FTS5 search & citation lookup tests
+│       ├── digest.test.ts      # Compact digest formatting & token limits tests
+│       └── server.test.ts      # HTTP API, hook ingestion, and SSE broadcast tests
+├── tests/                      # Python agent-sync tests
+└── docs/superpowers/specs/
+    └── 2026-09-24-agent-mem-design.md
 ```
 
 ---
@@ -272,12 +280,15 @@ agent-mem/
 
 ## 9. Verification & Test Plan
 
-1. **Unit Testing (`bun test`):**
+1. **Unit Testing (`bun test` within `agent-mem/`):**
    - `redactor.test.ts`: Verify multi-line `<private>` tags, lowercase/uppercase variations, and sensitive tokens (API keys, passwords) are properly stripped.
    - `db.test.ts`: Validate table creation, session/event insertion, FTS5 search ranking, and trigger synchronization.
    - `digest.test.ts`: Test that digest outputs match formatting standards and strictly respect token boundaries.
    - `server.test.ts`: Verify `/api/hook`, `/api/search`, `/api/observations/:id`, and `/api/stream` SSE broadcasting.
-2. **Integration Testing:**
+2. **Dual-Environment Test Suite:**
+   - Existing Python tests continue passing cleanly via `python3 -m unittest discover -s tests -p "test_*.py"`.
+   - New Bun tests run via `cd agent-mem && bun test`.
+3. **Integration Testing:**
    - Simulate a full session lifecycle: `session-start` -> `post-tool` -> `session-end`.
    - Verify citation lookup `agent-mem get <obs_id>` accurately returns the stored payload.
    - Verify the Web Viewer HTML renders received SSE messages in real-time.

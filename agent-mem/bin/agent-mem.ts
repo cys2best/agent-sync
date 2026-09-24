@@ -120,14 +120,34 @@ if (command === "daemon") {
       console.log(data.digest);
     }
   } else if (event === "post-tool") {
+    // Extract tool info from Antigravity PostToolUse stdin or CLI args
+    const stdinToolCall = stdinData.toolCall || {};
+    const stdinToolName = stdinToolCall.name || "";
+    const stdinToolArgs = stdinToolCall.args || {};
+
     const summaryIndex = args.indexOf("--summary");
-    const summary =
-      dataObj.summary || (summaryIndex !== -1 ? args[summaryIndex + 1] : "Tool execution");
+    let summary = dataObj.summary || (summaryIndex !== -1 ? args[summaryIndex + 1] : "");
 
     const toolIndex = args.indexOf("--tool");
-    const toolName = dataObj.toolName || (toolIndex !== -1 ? args[toolIndex + 1] : "tool");
+    const toolName = stdinToolName || dataObj.toolName || (toolIndex !== -1 ? args[toolIndex + 1] : "tool");
+
+    // Build a meaningful summary from tool call data when not provided via CLI
+    if (!summary && stdinToolName) {
+      const argSnippets: string[] = [];
+      for (const [k, v] of Object.entries(stdinToolArgs)) {
+        const val = typeof v === "string" ? v : JSON.stringify(v);
+        // Truncate long values
+        argSnippets.push(`${k}=${val.length > 80 ? val.slice(0, 77) + "..." : val}`);
+      }
+      summary = `${stdinToolName}(${argSnippets.join(", ").slice(0, 200)})`;
+    }
+    if (!summary) summary = "Tool execution";
 
     let content = dataObj.content || "";
+    if (!content && stdinToolName) {
+      // Serialize tool call args as content for searchability
+      content = JSON.stringify(stdinToolArgs).slice(0, 2000);
+    }
     if (!content) {
       const contentTokens: string[] = [];
       for (let i = 2; i < args.length; i++) {
@@ -168,7 +188,13 @@ if (command === "daemon") {
       process.exit(1);
     }
     const data = (await res.json()) as any;
-    console.log(`Recorded observation [${data.observationId}] (~${data.tokensApprox} tokens)`);
+
+    if (outputFormat === "antigravity") {
+      // PostToolUse contract: output empty JSON object
+      console.log(JSON.stringify({}));
+    } else {
+      console.log(`Recorded observation [${data.observationId}] (~${data.tokensApprox} tokens)`);
+    }
   } else if (event === "session-end") {
     const sessionIndex = args.indexOf("--session");
     const sessionId = dataObj.sessionId || (sessionIndex !== -1 ? args[sessionIndex + 1] : undefined);
@@ -297,6 +323,18 @@ if (command === "daemon") {
             type: "command",
             command: `bun run ${binPath} hook session-start --output-format antigravity`,
             timeout: 10,
+          },
+        ],
+        PostToolUse: [
+          {
+            matcher: "*",
+            hooks: [
+              {
+                type: "command",
+                command: `bun run ${binPath} hook post-tool --output-format antigravity`,
+                timeout: 10,
+              },
+            ],
           },
         ],
       },

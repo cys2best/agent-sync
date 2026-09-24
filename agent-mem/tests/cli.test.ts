@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createMemoryServer } from "../src/daemon/server";
 import type { Server } from "bun";
 
@@ -223,5 +224,78 @@ describe("CLI entry point", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
+  });
+
+  it("outputs antigravity JSON format with --output-format antigravity", async () => {
+    // Simulate Antigravity PreInvocation stdin payload
+    const stdinPayload = JSON.stringify({
+      conversationId: "test-conv-123",
+      workspacePaths: [process.cwd()],
+    });
+
+    const proc = Bun.spawn(
+      ["bun", "run", cliPath, "hook", "session-start", "--output-format", "antigravity"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: new Blob([stdinPayload]),
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      }
+    );
+    const stdout = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed).toHaveProperty("injectSteps");
+    expect(Array.isArray(parsed.injectSteps)).toBe(true);
+    expect(parsed.injectSteps.length).toBeGreaterThan(0);
+    expect(parsed.injectSteps[0]).toHaveProperty("ephemeralMessage");
+    expect(parsed.injectSteps[0].ephemeralMessage).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
+  });
+
+  it("shows setup in help text", async () => {
+    const proc = Bun.spawn(["bun", "run", cliPath, "--help"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const text = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    expect(text).toContain("setup");
+  });
+
+  it("setup --agent antigravity --scope project creates hooks.json", async () => {
+    const tmpDir = join(import.meta.dir, "__setup_test_workspace__");
+    const agentsDir = join(tmpDir, ".agents");
+    mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      const proc = Bun.spawn(
+        ["bun", "run", cliPath, "setup", "--agent", "antigravity", "--scope", "project"],
+        {
+          stdout: "pipe",
+          stderr: "pipe",
+          cwd: tmpDir,
+        }
+      );
+      const stdout = await new Response(proc.stdout).text();
+      const exitCode = await proc.exited;
+
+      expect(exitCode).toBe(0);
+      expect(stdout).toContain("Antigravity project hook installed");
+
+      const hooksFile = join(agentsDir, "hooks.json");
+      expect(existsSync(hooksFile)).toBe(true);
+
+      const hooks = JSON.parse(readFileSync(hooksFile, "utf-8"));
+      expect(hooks).toHaveProperty("agent-mem");
+      expect(hooks["agent-mem"]).toHaveProperty("PreInvocation");
+      expect(hooks["agent-mem"].PreInvocation[0].command).toContain("agent-mem.ts");
+      expect(hooks["agent-mem"].PreInvocation[0].command).toContain("--output-format antigravity");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

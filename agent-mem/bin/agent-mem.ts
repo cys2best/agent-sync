@@ -2,6 +2,9 @@
 import { createMemoryServer } from "../src/daemon/server";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -16,13 +19,39 @@ Commands:
   search <query> [--limit <n>]   Search project memory using SQLite FTS5
   get <observation-id>           Retrieve exact content of an observation
   digest                         Output the compact startup digest for this project
+  setup [--agent <type>]         Install hooks for an agent (antigravity, claude, codex)
   help                           Show this help message
+
+Options for hook:
+  --output-format <fmt>          Output format: antigravity | claude | raw (default: raw)
+  --project <path>               Project path override
+
+Options for setup:
+  --agent <type>                 Agent type: antigravity (default), claude, codex
+  --scope <scope>                Scope: global (default), project
 `);
 }
 
 if (!command || command === "help" || command === "--help" || command === "-h") {
   printHelp();
   process.exit(0);
+}
+
+/**
+ * Read stdin as JSON. Antigravity hooks send a JSON payload with
+ * conversationId, workspacePaths, etc. We drain stdin to avoid hanging.
+ */
+async function readStdinJson(): Promise<Record<string, any>> {
+  try {
+    const input = await Bun.stdin.text();
+    if (input.trim()) return JSON.parse(input);
+  } catch {}
+  return {};
+}
+
+function getArgValue(flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx !== -1 && args[idx + 1] ? args[idx + 1] : undefined;
 }
 
 if (command === "daemon") {
@@ -38,8 +67,15 @@ if (command === "daemon") {
     process.exit(1);
   }
 
-  const projectIndex = args.indexOf("--project");
-  const projectPath = projectIndex !== -1 ? args[projectIndex + 1] : process.cwd();
+  const outputFormat = getArgValue("--output-format") || "raw";
+
+  // Read stdin — Antigravity hooks send JSON payload, must drain to avoid hanging
+  const stdinData = await readStdinJson();
+
+  // Resolve project path: prefer stdin workspacePaths, then --project flag, then cwd
+  const projectFlagPath = getArgValue("--project");
+  const stdinProjectPath = stdinData.workspacePaths?.[0];
+  const projectPath = stdinProjectPath || projectFlagPath || process.cwd();
   const projectId = getProjectId(projectPath);
   const projectName = projectPath.split("/").pop() || "project";
 
@@ -73,7 +109,16 @@ if (command === "daemon") {
       process.exit(1);
     }
     const data = (await res.json()) as any;
-    console.log(data.digest);
+
+    if (outputFormat === "antigravity") {
+      // Antigravity PreInvocation contract: output JSON with injectSteps
+      const output = {
+        injectSteps: [{ ephemeralMessage: data.digest }],
+      };
+      console.log(JSON.stringify(output));
+    } else {
+      console.log(data.digest);
+    }
   } else if (event === "post-tool") {
     const summaryIndex = args.indexOf("--summary");
     const summary =
@@ -91,7 +136,8 @@ if (command === "daemon") {
           args[i] === "--project" ||
           args[i] === "--data" ||
           args[i] === "--session" ||
-          args[i] === "--tool"
+          args[i] === "--tool" ||
+          args[i] === "--output-format"
         ) {
           i++;
         } else {
@@ -236,6 +282,100 @@ if (command === "daemon") {
   }
   const data = (await res.json()) as any;
   console.log(data.digest);
+} else if (command === "setup") {
+  const agentType = getArgValue("--agent") || "antigravity";
+  const scope = getArgValue("--scope") || "global";
+
+  // Resolve absolute path to this CLI script
+  const binPath = resolve(join(import.meta.dir, "agent-mem.ts"));
+
+  if (agentType === "antigravity") {
+    const hookEntry = {
+      "agent-mem": {
+        PreInvocation: [
+          {
+            type: "command",
+            command: `bun run ${binPath} hook session-start --output-format antigravity`,
+            timeout: 10,
+          },
+        ],
+      },
+    };
+
+    if (scope === "global") {
+      const configDir = join(homedir(), ".gemini", "config");
+      const hooksFile = join(configDir, "hooks.json");
+
+      let existing: Record<string, any> = {};
+      if (existsSync(hooksFile)) {
+        try {
+          existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
+        } catch {
+          console.error(`Warning: Could not parse existing ${hooksFile}, will merge carefully.`);
+        }
+      }
+
+      // Merge: add/replace the "agent-mem" key, keep everything else
+      existing["agent-mem"] = hookEntry["agent-mem"];
+
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
+      console.log(`✅ Antigravity global hook installed at: ${hooksFile}`);
+      console.log(`   Hook command: bun run ${binPath} hook session-start --output-format antigravity`);
+      console.log(`\n   The agent-mem digest will be injected at the start of every Antigravity session.`);
+    } else if (scope === "project") {
+      const agentsDir = join(process.cwd(), ".agents");
+      const hooksFile = join(agentsDir, "hooks.json");
+
+      let existing: Record<string, any> = {};
+      if (existsSync(hooksFile)) {
+        try {
+          existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
+        } catch {}
+      }
+
+      existing["agent-mem"] = hookEntry["agent-mem"];
+
+      mkdirSync(agentsDir, { recursive: true });
+      writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
+      console.log(`✅ Antigravity project hook installed at: ${hooksFile}`);
+    } else {
+      console.error(`Unknown scope: ${scope}. Use 'global' or 'project'.`);
+      process.exit(1);
+    }
+  } else if (agentType === "claude") {
+    console.log(`Claude Code setup:`);
+    console.log(`\nAdd the following to your .claude/settings.json or project .claude-plugin/hooks.json:\n`);
+    console.log(JSON.stringify({
+      hooks: {
+        SessionStart: [
+          {
+            type: "command",
+            command: `bun run ${binPath} hook session-start`,
+          },
+        ],
+      },
+    }, null, 2));
+    console.log(`\nOr create .claude-plugin/hooks.json with:`);
+    console.log(JSON.stringify({
+      hooks: {
+        SessionStart: [
+          {
+            type: "command",
+            command: `bun run ${binPath} hook session-start`,
+          },
+        ],
+      },
+    }, null, 2));
+  } else if (agentType === "codex") {
+    console.log(`Codex setup:`);
+    console.log(`\nCodex doesn't support lifecycle hooks natively yet.`);
+    console.log(`Add to your AGENTS.md or project instructions:`);
+    console.log(`\n  Persistent Memory: Query project history via skill \`mem-search\` or \`bun run ${binPath} search "<query>"\`.`);
+  } else {
+    console.error(`Unknown agent type: ${agentType}. Supported: antigravity, claude, codex`);
+    process.exit(1);
+  }
 } else {
   console.error(`Unknown command: ${command}`);
   printHelp();

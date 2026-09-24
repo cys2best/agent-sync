@@ -1,0 +1,18 @@
+{
+  "name": "agent-mem",
+  "version": "0.1.0",
+  "description": "Persistent memory and handoff replacement system for coding agents",
+  "main": "src/index.ts",
+  "bin": {
+    "agent-mem": "bin/agent-mem.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "start": "bun run bin/agent-mem.ts daemon"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

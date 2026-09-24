@@ -170,7 +170,8 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
       if (url.pathname === "/api/search") {
         const q = url.searchParams.get("q") || "";
         const projectId = url.searchParams.get("project") || undefined;
-        const limit = parseInt(url.searchParams.get("limit") || "10", 10);
+        const rawLimit = parseInt(url.searchParams.get("limit") || "10", 10);
+        const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
         const results = searchObservations(db, q, projectId, limit);
         return jsonResponse({ results });
       }

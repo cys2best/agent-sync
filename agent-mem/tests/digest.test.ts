@@ -61,6 +61,11 @@ describe("compact digest generator", () => {
     expect(digest).toContain("http://localhost:3777/p/proj_demo");
   });
 
+  it("normalizes web viewer URLs by stripping trailing slashes", () => {
+    const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents", "http://localhost:3777///");
+    expect(digest).toContain("Live Viewer: http://localhost:3777/p/proj_demo");
+  });
+
   it("falls back to session title or default text when summary is missing", () => {
     insertSession(db, {
       id: "ses_title_only",

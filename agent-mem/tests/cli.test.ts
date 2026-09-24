@@ -194,7 +194,22 @@ describe("CLI entry point", () => {
     const failExit = await failProc.exited;
 
     expect(failExit).toBe(1);
-    expect(failStderr).toContain("Observation obs_nonexistent not found");
+    expect(failStderr).toContain("Request failed (404):");
+    expect(failStderr).toContain("Observation not found");
+  });
+
+  it("handles HTTP error response when hook fails on server", async () => {
+    const proc = Bun.spawn(["bun", "run", cliPath, "hook", "invalid_event"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+    });
+    const stderr = await new Response(proc.stderr).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("Request failed (400):");
+    expect(stderr).toContain("Unknown event type");
   });
 
   it("executes digest command to print project memory digest", async () => {

@@ -68,6 +68,10 @@ if (command === "daemon") {
         ...dataObj,
       }),
     });
+    if (!res.ok) {
+      console.error(`Request failed (${res.status}): ${await res.text()}`);
+      process.exit(1);
+    }
     const data = (await res.json()) as any;
     console.log(data.digest);
   } else if (event === "post-tool") {
@@ -113,6 +117,10 @@ if (command === "daemon") {
         ...dataObj,
       }),
     });
+    if (!res.ok) {
+      console.error(`Request failed (${res.status}): ${await res.text()}`);
+      process.exit(1);
+    }
     const data = (await res.json()) as any;
     console.log(`Recorded observation [${data.observationId}] (~${data.tokensApprox} tokens)`);
   } else if (event === "session-end") {
@@ -131,6 +139,10 @@ if (command === "daemon") {
         ...dataObj,
       }),
     });
+    if (!res.ok) {
+      console.error(`Request failed (${res.status}): ${await res.text()}`);
+      process.exit(1);
+    }
     const data = (await res.json()) as any;
     console.log("Session ended");
   } else {
@@ -144,11 +156,11 @@ if (command === "daemon") {
         ...dataObj,
       }),
     });
-    const data = (await res.json()) as any;
     if (!res.ok) {
-      console.error(data.error || "Hook failed");
+      console.error(`Request failed (${res.status}): ${await res.text()}`);
       process.exit(1);
     }
+    const data = (await res.json()) as any;
   }
 } else if (command === "search") {
   const projectIndex = args.indexOf("--project");
@@ -179,6 +191,10 @@ if (command === "daemon") {
     searchUrl += `&limit=${encodeURIComponent(limit)}`;
   }
   const res = await fetch(searchUrl);
+  if (!res.ok) {
+    console.error(`Request failed (${res.status}): ${await res.text()}`);
+    process.exit(1);
+  }
   const data = (await res.json()) as any;
   const results = data.results || [];
   if (results.length === 0) {
@@ -198,7 +214,7 @@ if (command === "daemon") {
   const serverUrl = await ensureDaemonRunning();
   const res = await fetch(`${serverUrl}/api/observations/${obsId}`);
   if (!res.ok) {
-    console.error(`Observation ${obsId} not found.`);
+    console.error(`Request failed (${res.status}): ${await res.text()}`);
     process.exit(1);
   }
   const data = (await res.json()) as any;
@@ -214,6 +230,10 @@ if (command === "daemon") {
   const res = await fetch(
     `${serverUrl}/api/digest?project=${encodeURIComponent(projectId)}&name=${encodeURIComponent(projectName)}`
   );
+  if (!res.ok) {
+    console.error(`Request failed (${res.status}): ${await res.text()}`);
+    process.exit(1);
+  }
   const data = (await res.json()) as any;
   console.log(data.digest);
 } else {

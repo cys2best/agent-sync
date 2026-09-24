@@ -74,6 +74,8 @@ class TestPluginManifest(unittest.TestCase):
         skills_dir = os.path.join(self.repo_root, "skills")
         self.assertTrue(os.path.isdir(skills_dir))
         for item in os.listdir(skills_dir):
+            if item.startswith('.'):
+                continue
             item_path = os.path.join(skills_dir, item)
             if os.path.isdir(item_path):
                 skill_md = os.path.join(item_path, "SKILL.md")

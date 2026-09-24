@@ -115,6 +115,17 @@ describe("memory daemon HTTP server", () => {
     expect(Array.isArray(body.results)).toBe(true);
     expect(body.results.length).toBeGreaterThan(0);
     expect(body.results[0].summary).toContain("Created secret key");
+
+    // Guard against NaN or non-positive limit
+    const nanRes = await fetch(`${baseUrl}/api/search?q=secret&project=proj_test&limit=notanumber`);
+    expect(nanRes.status).toBe(200);
+    const nanBody = (await nanRes.json()) as any;
+    expect(nanBody.results.length).toBeGreaterThan(0);
+
+    const negRes = await fetch(`${baseUrl}/api/search?q=secret&project=proj_test&limit=-5`);
+    expect(negRes.status).toBe(200);
+    const negBody = (await negRes.json()) as any;
+    expect(negBody.results.length).toBeGreaterThan(0);
   });
 
   it("returns 404 for non-existent observation ID", async () => {

@@ -84,5 +84,7 @@ describe("SSE Hub", () => {
     expect(html).toContain("Live Activity Stream");
     expect(html).toContain("EventSource");
     expect(html).toContain("/api/stream");
+    expect(html).toContain("sse.onopen");
+    expect(html).toContain("summaryP.textContent = data.summary");
   });
 });

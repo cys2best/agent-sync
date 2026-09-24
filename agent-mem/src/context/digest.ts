@@ -28,9 +28,10 @@ export function generateCompactDigest(
   const sessions = getRecentSessions(db, projectId, config.maxRecentSessionsInDigest);
   const observations = getRecentObservations(db, projectId, 5);
 
+  const base = webViewerUrl.replace(/\/+$/, "");
   const lines: string[] = [];
   lines.push("=== AGENT-MEM: PROJECT MEMORY ===");
-  lines.push(`Project: ${projectName} | Live Viewer: ${webViewerUrl}/p/${projectId}`);
+  lines.push(`Project: ${projectName} | Live Viewer: ${base}/p/${projectId}`);
 
   if (sessions.length === 0) {
     lines.push("Recent Activity: No past recorded sessions yet. This session is the first recorded.");

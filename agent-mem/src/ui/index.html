@@ -53,18 +53,37 @@
     const feed = document.getElementById("eventsFeed");
     const sse = new EventSource("/api/stream");
 
+    sse.onopen = () => {
+      document.getElementById("connStatus").textContent = "● Connected";
+      document.getElementById("connStatus").className = "text-xs text-emerald-400 font-medium";
+    };
+
     sse.addEventListener("observation", (e) => {
       const data = JSON.parse(e.data);
       const card = document.createElement("div");
       card.className = "p-4 bg-slate-900 border border-slate-800 rounded-lg hover:border-slate-700 transition cursor-pointer";
       card.onclick = () => openDrawer(data);
-      card.innerHTML = `
-        <div class="flex justify-between items-start mb-1">
-          <span class="text-xs font-mono text-indigo-400 font-semibold">[${data.id}]</span>
-          <span class="text-xs text-slate-500">~${data.tokensApprox} tokens</span>
-        </div>
-        <p class="text-sm text-slate-200">${data.summary}</p>
-      `;
+
+      const header = document.createElement("div");
+      header.className = "flex justify-between items-start mb-1";
+
+      const idSpan = document.createElement("span");
+      idSpan.className = "text-xs font-mono text-indigo-400 font-semibold";
+      idSpan.textContent = `[${data.id}]`;
+
+      const tokensSpan = document.createElement("span");
+      tokensSpan.className = "text-xs text-slate-500";
+      tokensSpan.textContent = `~${data.tokensApprox} tokens`;
+
+      header.appendChild(idSpan);
+      header.appendChild(tokensSpan);
+
+      const summaryP = document.createElement("p");
+      summaryP.className = "text-sm text-slate-200";
+      summaryP.textContent = data.summary;
+
+      card.appendChild(header);
+      card.appendChild(summaryP);
       feed.prepend(card);
     });
 

@@ -11,7 +11,7 @@ See:
 
 ## Overview
 
-agent-sync scaffolds shared context and task handoffs for coding agents through Markdown commands/skills and JSON registries. Helpers and tests use Python 3.10+ and the standard library; no dependency installation is needed.
+agent-sync scaffolds shared context and task handoffs for coding agents through Markdown skills and JSON registries. Helpers and tests use Python 3.10+ and the standard library; no dependency installation is needed.
 
 ## Commands
 
@@ -20,8 +20,8 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
 
 ## Boundaries
 
-- `commands/*.md` & `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.
-- `registry/*.json`: declarative agent/workflow definitions; commands consume registry or custom config instead of hardcoded agent/tool branches.
+- `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.
+- `registry/*.json`: declarative agent/workflow definitions; skills consume registry or custom config instead of hardcoded agent/tool branches.
 - `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.
 - `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.
 - `HANDOFF.md`: task-ID ledger only; execution details remain in the workflow's own reports.

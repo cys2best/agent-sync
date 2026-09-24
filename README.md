@@ -50,7 +50,7 @@ git clone https://github.com/cys2best/agent-sync.git ~/.gemini/config/plugins/ag
 # Or workspace-level installation
 git clone https://github.com/cys2best/agent-sync.git .agents/plugins/agent-sync
 ```
-Antigravity automatically loads `agent-sync` commands and respects project instructions in `AGENTS.md`.
+Antigravity automatically loads `agent-sync` skills and respects project instructions in `AGENTS.md`.
 
 ### Grok (Grok Build CLI)
 Clone into Grok's skills directory:

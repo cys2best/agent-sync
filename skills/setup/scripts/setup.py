@@ -176,10 +176,10 @@ def inspect_project(target_dir):
         info["overview"] = "This repository maintains project workflows, tests, and shared agent instructions."
 
     # Boundaries
-    if os.path.isdir(os.path.join(target_dir, "commands")) and os.path.isdir(os.path.join(target_dir, "skills")):
-        info["boundaries"].append("- `commands/*.md` & `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.")
+    if os.path.isdir(os.path.join(target_dir, "skills")):
+        info["boundaries"].append("- `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.")
     if os.path.isdir(os.path.join(target_dir, "registry")):
-        info["boundaries"].append("- `registry/*.json`: declarative agent/workflow definitions; commands consume registry or custom config instead of hardcoded agent/tool branches.")
+        info["boundaries"].append("- `registry/*.json`: declarative agent/workflow definitions; skills consume registry or custom config instead of hardcoded agent/tool branches.")
     if os.path.isdir(os.path.join(target_dir, ".agent-sync", "scripts")):
         info["boundaries"].append("- `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.")
     info["boundaries"].append("- `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.")

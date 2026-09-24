@@ -17,6 +17,7 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
 
 - Verify: `python3 -m unittest discover -s tests -p "test_*.py" && python3 -c "import json, glob; [json.load(open(f)) for f in glob.glob('registry/*.json')]"`
 - Focused test: `python3 -m unittest tests.test_archive.TestArchiveScript.test_single_finished_plan_is_archived`
+- Bump version: `scripts/bump-version.sh <new-version | patch | minor | major>`
 
 ## Boundaries
 

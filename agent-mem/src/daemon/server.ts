@@ -2,6 +2,8 @@ import type { Server } from "bun";
 import { openDatabase } from "../db/client";
 import {
   getObservationById,
+  getRecentObservations,
+  getStats,
   insertObservation,
   insertSession,
   searchObservations,
@@ -174,6 +176,22 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
         const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
         const results = searchObservations(db, q, projectId, limit);
         return jsonResponse({ results });
+      }
+
+      // 5.5 List Recent Observations
+      if (url.pathname === "/api/observations" && req.method === "GET") {
+        const projectId = url.searchParams.get("project") || undefined;
+        const rawLimit = parseInt(url.searchParams.get("limit") || "50", 10);
+        const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 50 : rawLimit;
+        const observations = getRecentObservations(db, projectId, limit);
+        return jsonResponse({ observations });
+      }
+
+      // 5.6 Stats API
+      if (url.pathname === "/api/stats") {
+        const projectId = url.searchParams.get("project") || undefined;
+        const stats = getStats(db, projectId);
+        return jsonResponse(stats);
       }
 
       // 6. Observation by ID

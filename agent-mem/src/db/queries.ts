@@ -188,15 +188,39 @@ export function getRecentSessions(db: Database, projectId: string, limit: number
   return rows as Session[];
 }
 
-export function getRecentObservations(db: Database, projectId: string, limit: number = 5): Observation[] {
-  const rows = db.prepare(`
+export function getRecentObservations(db: Database, projectId?: string, limit: number = 20): Observation[] {
+  let sql = `
     SELECT id, session_id as sessionId, project_id as projectId, type,
            summary, content, tokens_approx as tokensApprox, created_at as createdAt
     FROM observations
-    WHERE project_id = ?
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).all(projectId, limit) as any[];
+  `;
+  const params: any[] = [];
+  if (projectId) {
+    sql += " WHERE project_id = ?";
+    params.push(projectId);
+  }
+  sql += " ORDER BY created_at DESC LIMIT ?";
+  params.push(limit);
 
-  return rows as Observation[];
+  return db.prepare(sql).all(...params) as Observation[];
+}
+
+export function getStats(db: Database, projectId?: string) {
+  let sessionSql = "SELECT COUNT(*) as count FROM sessions WHERE status = 'active'";
+  let obsSql = "SELECT COUNT(*) as count FROM observations";
+  const params: any[] = [];
+  if (projectId) {
+    sessionSql += " AND project_id = ?";
+    obsSql += " WHERE project_id = ?";
+    params.push(projectId);
+  }
+  const activeSessions = (db.prepare(sessionSql).get(...params) as any)?.count || 0;
+  const totalObs = (db.prepare(obsSql).get(...params) as any)?.count || 0;
+  const projects = db.prepare("SELECT id, name FROM projects ORDER BY updated_at DESC").all() as any[];
+
+  return {
+    activeSessions,
+    totalObservations: totalObs,
+    projects,
+  };
 }

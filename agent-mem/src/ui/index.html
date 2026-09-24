@@ -7,23 +7,32 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans min-h-screen">
-  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-20 px-6 py-4 flex items-center justify-between">
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-20 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
     <div class="flex items-center space-x-3">
       <div class="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></div>
       <h1 class="text-xl font-bold tracking-tight">agent-mem <span class="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded ml-2">Live Stream</span></h1>
+      <select id="projectSelect" class="bg-slate-800 border border-slate-700 text-xs px-2.5 py-1.5 rounded-lg text-slate-200 focus:outline-none focus:border-indigo-500">
+        <option value="">All Projects</option>
+      </select>
     </div>
     <div class="flex items-center space-x-4">
-      <input id="searchInput" type="text" placeholder="Search memory (FTS5)..." class="bg-slate-800 border border-slate-700 text-sm px-3 py-1.5 rounded-lg w-64 focus:outline-none focus:border-indigo-500" />
-      <span id="connStatus" class="text-xs text-emerald-400 font-medium">● Connected</span>
+      <div class="relative">
+        <input id="searchInput" type="text" placeholder="Search memory (FTS5)..." class="bg-slate-800 border border-slate-700 text-sm px-3 py-1.5 rounded-lg w-64 focus:outline-none focus:border-indigo-500" />
+        <button id="clearSearch" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs">&times;</button>
+      </div>
+      <span id="connStatus" class="text-xs text-emerald-400 font-medium whitespace-nowrap">● Connected</span>
     </div>
   </header>
 
   <main class="max-w-6xl mx-auto px-6 py-8 grid grid-cols-1 md:grid-cols-3 gap-6">
     <section class="md:col-span-2 space-y-4">
-      <h2 class="text-lg font-semibold text-slate-200">Real-Time Event Stream</h2>
+      <div class="flex items-center justify-between">
+        <h2 id="feedTitle" class="text-lg font-semibold text-slate-200">Recent Observations</h2>
+        <span id="feedCount" class="text-xs text-slate-500 font-mono">Loading...</span>
+      </div>
       <div id="eventsFeed" class="space-y-3">
-        <div class="text-sm text-slate-500 italic p-4 bg-slate-900/40 rounded-lg border border-slate-800/80">
-          Listening for agent session events and tool executions...
+        <div class="text-sm text-slate-500 italic p-6 bg-slate-900/40 rounded-lg border border-slate-800/80 text-center">
+          Loading memory history...
         </div>
       </div>
     </section>
@@ -32,25 +41,197 @@
       <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800">
         <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">Memory Stats</h3>
         <dl class="space-y-2 text-sm">
-          <div class="flex justify-between"><dt class="text-slate-500">Active Sessions</dt><dd id="statSessions" class="font-mono text-indigo-400">1</dd></div>
-          <div class="flex justify-between"><dt class="text-slate-500">Observations</dt><dd id="statObs" class="font-mono text-emerald-400">0</dd></div>
-          <div class="flex justify-between"><dt class="text-slate-500">Privacy Blocks</dt><dd id="statPrivacy" class="font-mono text-amber-400">0</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Active Sessions</dt><dd id="statSessions" class="font-mono text-indigo-400">0</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Total Observations</dt><dd id="statObs" class="font-mono text-emerald-400">0</dd></div>
+          <div class="flex justify-between"><dt class="text-slate-500">Registered Projects</dt><dd id="statProjects" class="font-mono text-purple-400">0</dd></div>
         </dl>
       </div>
 
-      <div id="drawer" class="hidden bg-slate-900 p-5 rounded-xl border border-slate-700">
-        <div class="flex justify-between items-center mb-2">
-          <h4 id="drawerTitle" class="text-sm font-bold text-slate-200">Citation Details</h4>
-          <button onclick="closeDrawer()" class="text-slate-400 hover:text-white text-xs">&times; Close</button>
+      <div id="drawer" class="hidden bg-slate-900 p-5 rounded-xl border border-slate-700 shadow-xl sticky top-24">
+        <div class="flex justify-between items-center mb-3">
+          <h4 id="drawerTitle" class="text-sm font-bold text-slate-200 truncate pr-2">Citation Details</h4>
+          <button onclick="closeDrawer()" class="text-slate-400 hover:text-white text-base leading-none">&times;</button>
         </div>
-        <p id="drawerType" class="text-xs text-indigo-400 font-mono mb-2"></p>
-        <pre id="drawerContent" class="text-xs bg-slate-950 p-3 rounded text-slate-300 font-mono overflow-x-auto max-h-64"></pre>
+        <div class="flex items-center justify-between text-xs font-mono text-slate-400 mb-3 pb-2 border-b border-slate-800">
+          <span id="drawerType" class="text-indigo-400 font-semibold"></span>
+          <span id="drawerTokens" class="text-slate-500"></span>
+        </div>
+        <pre id="drawerContent" class="text-xs bg-slate-950 p-3 rounded text-slate-300 font-mono overflow-x-auto max-h-80 whitespace-pre-wrap break-all"></pre>
       </div>
     </aside>
   </main>
 
   <script>
     const feed = document.getElementById("eventsFeed");
+    const searchInput = document.getElementById("searchInput");
+    const clearSearch = document.getElementById("clearSearch");
+    const projectSelect = document.getElementById("projectSelect");
+    const feedTitle = document.getElementById("feedTitle");
+    const feedCount = document.getElementById("feedCount");
+
+    let currentProject = "";
+    let searchTimeout = null;
+
+    function formatTime(timestamp) {
+      if (!timestamp) return "";
+      const diffSec = Math.floor((Date.now() - timestamp) / 1000);
+      if (diffSec < 60) return "just now";
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      return `${Math.floor(diffHours / 24)}d ago`;
+    }
+
+    function createObservationCard(data) {
+      const card = document.createElement("div");
+      card.className = "p-4 bg-slate-900/90 border border-slate-800 rounded-lg hover:border-slate-700 transition cursor-pointer hover:bg-slate-900";
+      card.onclick = () => openDrawer(data);
+
+      const header = document.createElement("div");
+      header.className = "flex justify-between items-start mb-1.5";
+
+      const left = document.createElement("div");
+      left.className = "flex items-center space-x-2";
+
+      const idSpan = document.createElement("span");
+      idSpan.className = "text-xs font-mono text-indigo-400 font-semibold";
+      idSpan.textContent = `[${data.id}]`;
+
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700";
+      typeBadge.textContent = data.type || "observation";
+
+      left.appendChild(idSpan);
+      left.appendChild(typeBadge);
+
+      const right = document.createElement("div");
+      right.className = "flex items-center space-x-2 text-xs text-slate-500 font-mono";
+
+      if (data.createdAt) {
+        const timeSpan = document.createElement("span");
+        timeSpan.textContent = formatTime(data.createdAt);
+        right.appendChild(timeSpan);
+      }
+
+      const tokensSpan = document.createElement("span");
+      tokensSpan.textContent = `~${data.tokensApprox || 0} tok`;
+      right.appendChild(tokensSpan);
+
+      header.appendChild(left);
+      header.appendChild(right);
+
+      const summaryP = document.createElement("p");
+      summaryP.className = "text-sm text-slate-200";
+      summaryP.textContent = data.summary || "No summary";
+
+      card.appendChild(header);
+      card.appendChild(summaryP);
+      return card;
+    }
+
+    function renderObservations(observations) {
+      feed.innerHTML = "";
+      if (!observations || observations.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "text-sm text-slate-500 italic p-8 bg-slate-900/30 rounded-lg border border-slate-800/80 text-center";
+        empty.textContent = "No observations found in memory. Start an agent turn to see memories appear!";
+        feed.appendChild(empty);
+        feedCount.textContent = "0 items";
+        return;
+      }
+
+      feedCount.textContent = `${observations.length} item${observations.length === 1 ? "" : "s"}`;
+      for (const obs of observations) {
+        feed.appendChild(createObservationCard(obs));
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const query = currentProject ? `?project=${encodeURIComponent(currentProject)}` : "";
+        const res = await fetch(`/api/stats${query}`);
+        if (res.ok) {
+          const stats = await res.json();
+          document.getElementById("statSessions").textContent = stats.activeSessions ?? 0;
+          document.getElementById("statObs").textContent = stats.totalObservations ?? 0;
+          if (stats.projects && stats.projects.length > 0) {
+            document.getElementById("statProjects").textContent = stats.projects.length;
+            const currentSelected = projectSelect.value;
+            projectSelect.innerHTML = '<option value="">All Projects</option>';
+            for (const p of stats.projects) {
+              const opt = document.createElement("option");
+              opt.value = p.id;
+              opt.textContent = p.name || p.id;
+              if (opt.value === currentSelected) opt.selected = true;
+              projectSelect.appendChild(opt);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading stats:", err);
+      }
+    }
+
+    async function loadRecentObservations() {
+      try {
+        feedTitle.textContent = "Recent Observations";
+        const query = currentProject ? `?project=${encodeURIComponent(currentProject)}&limit=50` : "?limit=50";
+        const res = await fetch(`/api/observations${query}`);
+        if (res.ok) {
+          const data = await res.json();
+          renderObservations(data.observations || []);
+        }
+      } catch (err) {
+        console.error("Error loading observations:", err);
+      }
+    }
+
+    async function performSearch(query) {
+      if (!query.trim()) {
+        clearSearch.classList.add("hidden");
+        loadRecentObservations();
+        return;
+      }
+      clearSearch.classList.remove("hidden");
+      feedTitle.textContent = `Search results for "${query}"`;
+      try {
+        const projParam = currentProject ? `&project=${encodeURIComponent(currentProject)}` : "";
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}${projParam}&limit=50`);
+        if (res.ok) {
+          const data = await res.json();
+          renderObservations(data.results || []);
+        }
+      } catch (err) {
+        console.error("Search failed:", err);
+      }
+    }
+
+    // Search events
+    searchInput.addEventListener("input", (e) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        performSearch(e.target.value);
+      }, 200);
+    });
+
+    clearSearch.addEventListener("click", () => {
+      searchInput.value = "";
+      clearSearch.classList.add("hidden");
+      loadRecentObservations();
+    });
+
+    projectSelect.addEventListener("change", (e) => {
+      currentProject = e.target.value;
+      loadStats();
+      if (searchInput.value.trim()) {
+        performSearch(searchInput.value.trim());
+      } else {
+        loadRecentObservations();
+      }
+    });
+
+    // SSE Real-Time Listener
     const sse = new EventSource("/api/stream");
 
     sse.onopen = () => {
@@ -60,31 +241,27 @@
 
     sse.addEventListener("observation", (e) => {
       const data = JSON.parse(e.data);
-      const card = document.createElement("div");
-      card.className = "p-4 bg-slate-900 border border-slate-800 rounded-lg hover:border-slate-700 transition cursor-pointer";
-      card.onclick = () => openDrawer(data);
+      if (currentProject && data.projectId && data.projectId !== currentProject) {
+        return; // Filtered out
+      }
+      if (!searchInput.value.trim()) {
+        // If feed was empty placeholder, clear it
+        if (feed.querySelector(".text-center")) {
+          feed.innerHTML = "";
+        }
+        const card = createObservationCard(data);
+        feed.prepend(card);
+      }
+      const statObsEl = document.getElementById("statObs");
+      statObsEl.textContent = (parseInt(statObsEl.textContent, 10) || 0) + 1;
+    });
 
-      const header = document.createElement("div");
-      header.className = "flex justify-between items-start mb-1";
+    sse.addEventListener("session_start", () => {
+      loadStats();
+    });
 
-      const idSpan = document.createElement("span");
-      idSpan.className = "text-xs font-mono text-indigo-400 font-semibold";
-      idSpan.textContent = `[${data.id}]`;
-
-      const tokensSpan = document.createElement("span");
-      tokensSpan.className = "text-xs text-slate-500";
-      tokensSpan.textContent = `~${data.tokensApprox} tokens`;
-
-      header.appendChild(idSpan);
-      header.appendChild(tokensSpan);
-
-      const summaryP = document.createElement("p");
-      summaryP.className = "text-sm text-slate-200";
-      summaryP.textContent = data.summary;
-
-      card.appendChild(header);
-      card.appendChild(summaryP);
-      feed.prepend(card);
+    sse.addEventListener("session_end", () => {
+      loadStats();
     });
 
     sse.onerror = () => {
@@ -94,14 +271,19 @@
 
     function openDrawer(obs) {
       document.getElementById("drawer").classList.remove("hidden");
-      document.getElementById("drawerTitle").textContent = obs.id + " - " + obs.summary;
-      document.getElementById("drawerType").textContent = "Type: " + obs.type;
-      document.getElementById("drawerContent").textContent = obs.content;
+      document.getElementById("drawerTitle").textContent = `${obs.id} - ${obs.summary || ""}`;
+      document.getElementById("drawerType").textContent = `Type: ${obs.type || "observation"}`;
+      document.getElementById("drawerTokens").textContent = `~${obs.tokensApprox || 0} tokens`;
+      document.getElementById("drawerContent").textContent = obs.content || "No raw content attached.";
     }
 
     function closeDrawer() {
       document.getElementById("drawer").classList.add("hidden");
     }
+
+    // Initial load
+    loadStats();
+    loadRecentObservations();
   </script>
 </body>
 </html>

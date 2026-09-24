@@ -1,7 +1,7 @@
 {
   "name": "agent-sync",
-  "description": "Keep multiple coding agents (Claude Code, Codex, Antigravity, and others) in sync on shared project context and task handoff, without duplicating what Superpowers already owns.",
   "version": "0.7.0",
+  "description": "Keep multiple coding agents (Claude Code, Codex, Antigravity, and others) in sync on shared project context and task handoff, without duplicating what Superpowers already owns.",
   "author": {
     "name": "cys2best"
   },
@@ -14,6 +14,10 @@
     "antigravity",
     "handoff",
     "project-context",
-    "collaboration"
-  ]
+    "collaboration",
+    "memory",
+    "agent-mem"
+  ],
+  "skills": "./skills",
+  "hooks": "./.claude-plugin/hooks.json"
 }

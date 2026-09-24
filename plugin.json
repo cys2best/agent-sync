@@ -14,6 +14,10 @@
     "antigravity",
     "handoff",
     "project-context",
-    "collaboration"
-  ]
+    "collaboration",
+    "memory",
+    "agent-mem"
+  ],
+  "skills": "./skills",
+  "hooks": "./.claude-plugin/hooks.json"
 }

@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "bun run agent-mem/bin/agent-mem.ts hook session-start"
+      }
+    ]
+  }
+}

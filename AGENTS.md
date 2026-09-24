@@ -66,6 +66,7 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
   commits or PRs. Disable auto-attribution in your respective agent config.
 - Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
   task IDs only. Do not add entries for idle sessions where no tasks progressed.
+- Persistent Memory: Query project history via skill `mem-search` or `bun run agent-mem/bin/agent-mem.ts search "<query>"`. Wrap private details in `<private>` tags. Live Web Viewer runs at http://localhost:3777.
 - Think Before Coding: State consequential assumptions and tradeoffs; ask when ambiguity changes the result, and suggest a simpler approach when appropriate.
 - Simplicity First: Implement only the requested behavior with the smallest clear solution; avoid speculative features, configuration, and abstractions.
 - Surgical Changes: Match local style, change only what the task requires, and remove only code made unused by your changes; flag unrelated cleanup separately.

@@ -1,16 +1,16 @@
 ---
-description: Create or update .agent-sync/config.json and scaffold per-agent context files, HANDOFF.md, and .claude/settings.json so multiple coding agents share project context and task handoff.
+description: Create or update .agent-sync/config.json and scaffold per-agent context files, HANDOFF.md, MEMORY.md, COMMIT_CONVENTION.md, and .claude/settings.json so multiple coding agents share project context and task handoff.
 allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 ---
 
 ## Phase 1 — preflight configuration, policy, renders, and decisions
 
 This entire phase is read-only: do not create or modify any file. Complete its
-work in this order: resolve configuration; resolve and validate agents and
-workflows; render every proposed target; classify every target; then resolve
-every conflict and approval. Hold all proposed bytes and each target's
-original byte snapshot in memory. If any validation, conflict, or required
-user decision remains unresolved, stop with no writes.
+work in this order: resolve configuration; inspect the project tech stack;
+resolve and validate agents and workflows; render every proposed target;
+classify every target; then resolve every conflict and approval. Hold all proposed
+bytes and each target's original byte snapshot in memory. If any validation,
+conflict, or required user decision remains unresolved, stop with no writes.
 
 Read the command arguments (`$ARGUMENTS` when supplied by the host).
 Accept only optional `--regenerate-context`; unknown arguments stop before
@@ -38,13 +38,13 @@ use them throughout Phase 1:
      `activationSignals`, `executionInstructions`).
    - Check the repo root for existing hints: a file matching any
      registry entry's `contextFile` (e.g. an existing `AGENTS.md` or
-     `GEMINI.md`) is a signal that agent is already in use here; a
+     `CLAUDE.md`) is a signal that agent is already in use here; a
      directory matching a workflow tool's `ownedPaths` (e.g.
      `.superpowers/`) is a signal that tool is already in use here.
    - Ask the user which agents to enable for this project. Offer the
-     registry's known agents as defaults, pre-selecting any detected
-     from existing files, and allow adding a custom agent (id,
-     `contextFile`, `supportsImports`).
+     registry's known agents as defaults (`claude`, `codex`, `antigravity`,
+     `cursor`, `grok`, `gemini`), pre-selecting any detected from existing
+     files, and allow adding a custom agent (id, `contextFile`, `supportsImports`).
    - Ask the user which workflow/plan-execution tools this project
      uses (offer `superpowers` as the default, pre-selected if
      detected; allow zero tools, or a custom tool: id, `displayName`,
@@ -61,14 +61,10 @@ use them throughout Phase 1:
      same configuration object. Agents without defaults require explicit
      model IDs available in their host. Show that this generates instructions,
      with automatic selection dependent on the host/workflow's controls.
-   - Ask one more question: "Also generate `docs/PROJECT_CONTEXT.md` now?
-     (recommended if this is the first agent-sync setup for this repo)"
-     (yes/no, default yes). Record the answer as `{GENERATE_PROJECT_CONTEXT}`.
-     If `--regenerate-context` was supplied, skip this question and set it to yes.
    - Build one configuration object from the selected agents and workflow
      tools, applying the omission and inline-object rules below.
      Assign that single validated object to `{EFFECTIVE_CONFIG}` before Phase
-     1B consumes it. Resolve and validate every selected workflow using Phase 1B's
+     1B consumes it. Resolve and validate every selected workflow using Phase 1C's
      workflow policy; on invalid input, report the workflow id and invalid
      field and do not stage or write the file.
    - Serialize that exact same `{EFFECTIVE_CONFIG}` object, without rebuilding
@@ -107,11 +103,43 @@ use them throughout Phase 1:
      collection.
      If the user has no opinion on workflow tools, omit `workflowTools`
      from the file rather than guessing — a missing key defaults to
-     `["superpowers"]` (see Phase 1B), which matches this plugin's own
+     `["superpowers"]` (see Phase 1C), which matches this plugin's own
      prior hardcoded behavior. An explicit `"workflowTools": []` means
      "none", and is different from omitting the key.
 
-### 1B — resolve and validate configuration and render targets
+### 1B — inspect project and tech stack
+
+Inspect the repository to discover purpose, runtime, commands, boundaries, and vendor
+directories. All real project context is written directly into `AGENTS.md` (and durable
+lessons into `MEMORY.md`), eliminating the need for a separate `docs/PROJECT_CONTEXT.md`.
+
+Commit policy is not dynamically inferred: agent-sync strictly enforces Conventional Commits:
+`<type>(optional-scope): imperative description` and scaffolds `COMMIT_CONVENTION.md`.
+
+- Read the relevant manifest, lockfile, README, task scripts, and CI config
+  to identify purpose, runtime, package manager, and commands. Inspect only
+  enough first-party files to confirm these facts.
+- Resolve `{CMD_VERIFY}` to the existing verification script, or a compact
+  combination of the project's test and lint/typecheck commands.
+  Resolve `{CMD_TEST_FOCUSED}` to one useful targeted-test example when known;
+  `{CMD_BUILD}` and `{CMD_SETUP}` only when they add necessary information.
+  Never invent commands; omit unavailable commands and report essential gaps.
+- Identify up to five non-obvious boundaries or constraints with concrete
+  paths. Do not produce a directory inventory or describe code readable at
+  the point of use. Prefer links to existing detailed documentation.
+- Detect vendor/build directories from package manifests (`package.json`,
+  `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), `.gitignore`,
+  and root directory names (`node_modules/`, `vendor/`, `.venv/`, `venv/`,
+  `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`).
+  Record unique existing paths as `{DETECTED_VENDOR_DIRS}`; do not scan their
+  contents. Render at most one exclusion bullet.
+
+Define the following values before rendering the `agent-policy` block:
+- `{COMMIT_FORMAT}` is `<type>(optional-scope): imperative description`.
+- `{COMMIT_EXAMPLE_1}` is `feat(config): add workflow model policies`.
+- `{PROJECT_PURPOSE_AND_STACK}` is the two-sentence project purpose and tech stack summary.
+
+### 1C — resolve, validate, and render targets
 
 For every agent in `{EFFECTIVE_CONFIG}`'s `agents` array, resolve its
 `displayName`, `contextFile`, and `supportsImports` — from the registry if it's a
@@ -121,9 +149,9 @@ unique `contextFile`, define:
 - `{TARGET_AGENTS}`: array of agents configured for this file.
 - `{OTHER_AGENTS}`: comma-joined `displayName` (or id) of every configured
   agent *not* mapped to this file.
-Two or more agents may resolve to the same `contextFile` (e.g. Codex and
-Antigravity both default to `AGENTS.md`) — render that target once using the
-multi-agent rendering rules below.
+Two or more agents may resolve to the same `contextFile` (e.g. Claude Code, Codex,
+Antigravity, Cursor, and Grok all resolve to `AGENTS.md`) — render that target once
+using the multi-agent rendering rules below.
 
 Resolve the workflow-tool list from `{EFFECTIVE_CONFIG}`'s `workflowTools`
 key. If the key is absent, treat it as `["superpowers"]`.
@@ -160,123 +188,48 @@ order:
 For registry workflows and complete custom workflows, preserve every
 `executionInstructions` item verbatim and in registry/custom-object order.
 
-Resolve and validate the optional model policy in Phase 1B.1 before rendering.
+Resolve and validate the optional model policy in Phase 1C.1 before rendering.
 
-After every render input is resolved, construct the proposed managed block
-for every agent `contextFile` and `HANDOFF.md`, then classify every target
-and collect all approvals before changing any target:
+After every render input is resolved, construct the proposed managed blocks for
+all targets:
+1. `AGENTS.md` (and any custom agent `contextFile`s)
+2. `COMMIT_CONVENTION.md`
+3. `CLAUDE.md` (when `claude` is an enabled agent)
+4. `MEMORY.md`
+5. `HANDOFF.md`
+6. `.claude/settings.json`
+7. `docs/PROJECT_CONTEXT.md` (staged for removal if existing)
+
+Classify every target and collect all approvals before changing any target:
 - `missing`: path does not exist.
 - `managed`: exactly one non-nested matching marker pair exists.
-- `known-legacy`: no markers exist and the file is byte-for-byte equal to one
-  of the two supported released 0.1.0 per-agent render variants below.
-- `unrecognized`: existing unmarked content that is not exact known legacy.
+- `unrecognized`: existing unmarked content.
 - `malformed`: one marker missing, duplicate markers, end before start, or any
   nested managed marker.
-
-The expected `known-legacy` structure applies to per-agent context files; an
-unmarked `HANDOFF.md` is `unrecognized` unless it has its own matching managed
-markers (`handoff-template`).
-
-For the two supported legacy variants, compare the entire target file to the
-literal contents below, including the single final LF after the last line. Do
-not substitute agent names, imports, other-agent names, attribution wording,
-or workflow text. These fixed compatibility fixtures are the historical
-renders from commit `dde76e9`:
-
-### Supported 0.1.0 Claude import variant (`CLAUDE.md` only)
-
-```markdown
-# Claude Code Instructions
-
-This file is intentionally thin. All real project knowledge lives in the
-shared files below so other agents see the same thing.
-
-@docs/PROJECT_CONTEXT.md
-@HANDOFF.md
-
-## Claude Code specific
-- Use the Superpowers skills for any multi-step task. Superpowers owns
-  `.superpowers/sdd/`, `docs/superpowers/` — don't hand-edit these or
-  create files there yourself; that's the tool's job. Before starting
-  work, check Superpowers's own state under those paths for active
-  plans and current task status.
-- Read `HANDOFF.md` to see which agent (Codex) last touched each
-  plan/task and what's next.
-- Claim a task by adding an entry to `HANDOFF.md`:
-  `Claiming plan-name/task-N — claude`
-- Commit messages must include the plan-scoped task ID only, no agent
-  name: `[plan-name/task-N] description`
-- Do not add a "Co-Authored-By" trailer or "Generated with Claude Code"
-  footer to commits or PRs (also enforced by `.claude/settings.json`
-  `attribution` config — this line is a backup in case that file is
-  missing or overridden locally).
-- At the end of a session, append a handoff entry to `HANDOFF.md`: what
-  you finished, what's next, and any blockers, per plan.
-```
-
-### Supported 0.1.0 Codex no-import variant (`AGENTS.md` only)
-
-```markdown
-# Codex Instructions
-
-This file is intentionally thin. All real project knowledge lives in the
-shared files below so other agents see the same thing.
-
-See:
-- docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
-- HANDOFF.md — the running log between agents, per plan/task
-
-(Codex doesn't support `@path` imports like Claude Code does — read both
-files above manually at the start of every session, or wire this into a
-startup script if your Codex setup supports one.)
-
-## Codex specific
-- Use the Superpowers skills for any multi-step task, same as Claude
-  Code. Superpowers owns `.superpowers/sdd/`, `docs/superpowers/` —
-  don't hand-edit these or create files there yourself; that's the
-  tool's job. Before starting work, check Superpowers's own state
-  under those paths for active plans and current task status.
-- Read `HANDOFF.md` to see which agent (Claude Code) last touched each
-  plan/task and what's next.
-- Claim a task by adding an entry to `HANDOFF.md`:
-  `Claiming plan-name/task-N — codex`
-- Commit messages must include the plan-scoped task ID only, no agent
-  name: `[plan-name/task-N] description`
-- Do not add a "Co-Authored-By" trailer or similar AI-attribution footer
-  to commits or PRs. If your Codex setup has an equivalent auto-attribution
-  behavior, disable it in its config the same way `.claude/settings.json`
-  does for Claude Code.
-- At the end of a session, append a handoff entry to `HANDOFF.md`: what
-  you finished, what's next, and any blockers, per plan.
-```
-
-Any byte difference or unsupported legacy shape is `unrecognized`, never
-automatic migration.
 
 During preflight, record one staged action for each classification after all
 approvals have been collected; do not execute any action yet:
 - `missing`: stage creation of the file with its managed block.
 - `managed`: stage replacement of the matching markers and all bytes between
   them; preserve every byte before and after.
-- `known-legacy`: stage replacement of the recognized legacy content with the
-  managed block and record an automatic migration.
 - `unrecognized`: show the proposed block and ask before inserting it. On yes,
   stage insertion after a top-level title, otherwise at byte zero. On no, stage
   byte-for-byte preservation and continue classifying other targets.
 - `malformed`: stage byte-for-byte preservation, record the exact defect, and
   never guess or ask to overwrite it.
 
-For an agent `contextFile`, define:
+#### Rendering `AGENTS.md`
+
+For `AGENTS.md`, define:
 - `{TARGET_AGENTS}`: array of agents configured for this file.
 - `{OTHER_AGENTS}`: comma-joined `displayName` (or id) of every configured
   agent *not* mapped to this file.
 - `{AGENT_NAMES_JOINED}`: comma-joined `displayName` (or id, if no registry
   `displayName`) of every agent in `{TARGET_AGENTS}`.
 - `{AGENT_IDS_SLASH}`: id of every agent in `{TARGET_AGENTS}`, joined with `/`
-  (e.g. `codex/antigravity`).
+  (e.g. `claude/codex/antigravity`).
 
-Resolve the per-file title, section, claim rule, and attribution rule based on `{TARGET_AGENTS}` length:
-
+Resolve the title, section, claim rule, and attribution rule:
 - When `{TARGET_AGENTS}` has length 1 (single agent with `displayName` `{AGENT_NAME}` and id `{AGENT_ID}`):
   - `{AGENT_TITLE}`: `# {AGENT_NAME} Instructions`
   - `{AGENT_SECTION}`: `## {AGENT_NAME} specific`
@@ -293,7 +246,7 @@ Resolve the per-file title, section, claim rule, and attribution rule based on `
       auto-attribution behavior, disable it the same way
       `.claude/settings.json` does for Claude Code.
     ```
-- When `{TARGET_AGENTS}` has length > 1 (multiple agents sharing this file, e.g. Codex and Antigravity):
+- When `{TARGET_AGENTS}` has length > 1 (multiple agents sharing this file, e.g. Claude Code, Codex, Antigravity):
   - `{AGENT_TITLE}`: `# Agent Instructions ({AGENT_NAMES_JOINED})`
   - `{AGENT_SECTION}`: `## {AGENT_NAMES_JOINED} specific`
   - `{CLAIM_RULE}`:
@@ -309,16 +262,41 @@ Resolve the per-file title, section, claim rule, and attribution rule based on `
       commits or PRs. Disable auto-attribution in your respective agent config.
     ```
 
-Then fill the managed block below, substituting `{AGENT_TITLE}`, `{IMPORT_BLOCK}`, `{AGENT_SECTION}`, `{WORKFLOW_TOOLS_BLOCK}`, `{OTHER_AGENTS}`, `{CLAIM_RULE}`, and `{ATTRIBUTION_RULE}`:
+Then render `AGENTS.md` managed block:
 
 ```markdown
 {AGENT_TITLE}
 
 <!-- agent-sync:agent-policy:start -->
-This file is intentionally thin. All real project knowledge lives in the
-shared files below so other agents see the same thing.
+This file contains shared project knowledge, conventions, and agent instructions.
 
-{IMPORT_BLOCK}
+See:
+- HANDOFF.md — the running log between agents, per plan/task
+- MEMORY.md — project learnings, component pitfalls, and durable lessons
+- COMMIT_CONVENTION.md — commit message format and rules
+- AGENTS.local.md — local private notes and personal overrides (gitignored)
+
+## Overview
+
+{PROJECT_PURPOSE_AND_STACK}
+
+## Commands
+
+- Verify: `{CMD_VERIFY}`
+- Focused test: `{CMD_TEST_FOCUSED}`
+- Build: `{CMD_BUILD}`
+- Setup: `{CMD_SETUP}`
+
+## Boundaries
+
+{UP_TO_FIVE_ACTIONABLE_PATH_SPECIFIC_CONSTRAINTS}
+{VENDOR_EXCLUSION_IF_DETECTED}
+
+## Conventions
+
+- Commit format: `<type>(optional-scope): imperative description` (see `COMMIT_CONVENTION.md`)
+- Commit example: `{COMMIT_EXAMPLE_1}`
+{WORKFLOW_TOOLS_OWNERSHIP_LINE}
 
 {AGENT_SECTION}
 {WORKFLOW_TOOLS_BLOCK}
@@ -331,25 +309,28 @@ shared files below so other agents see the same thing.
   a direct, ordinary execution path — do not route it through a workflow tool
   on your own inference.
 {CLAIM_RULE}
-- Before committing, read the convention in `docs/PROJECT_CONTEXT.md`. If it
-  names a repository policy file, read that source too. Follow its format and
-  examples. Keep plan names, task numbers, agent identity, and AI-attribution
+- Before committing, follow the commit convention in `COMMIT_CONVENTION.md`. Keep plan names, task numbers, agent identity, and AI-attribution
   out of the commit message; workflow state and `HANDOFF.md` retain task
   traceability.
 {ATTRIBUTION_RULE}
 - Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
   task IDs only. Do not add entries for idle sessions where no tasks progressed.
+- Think Before Coding: State consequential assumptions and tradeoffs; ask when ambiguity changes the result, and suggest a simpler approach when appropriate.
+- Simplicity First: Implement only the requested behavior with the smallest clear solution; avoid speculative features, configuration, and abstractions.
+- Surgical Changes: Match local style, change only what the task requires, and remove only code made unused by your changes; flag unrelated cleanup separately.
+- Learning: Keep up to five one-line lessons (25 words each) in MEMORY.md as `Component: pitfall → action`; merge duplicates, replace obsolete entries, and prefer regression tests.
+- Context upkeep: Aim for 80 lines, at most 120 lines and 1,200 words; keep actionable facts once, link to existing detail, and omit history, progress, and empty sections.
 <!-- agent-sync:agent-policy:end -->
 ```
 
-Keep `{AGENT_TITLE}` outside the markers. The start marker immediately
-precedes the shared-context pointer/import block, and the end marker
-immediately follows the session-handoff rule. Do not create an empty user
-section after the block.
+If `{OTHER_AGENTS}` is empty (all configured agents share `AGENTS.md`), omit `({OTHER_AGENTS})` from the `Read HANDOFF.md` bullet so it reads:
+`- Read HANDOFF.md to see which agent last touched each plan/task and what's next.`
 
-`{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
-non-empty — one bullet per tool, using its `displayName`,
-`activationSignals`, `ownedPaths`, and resolved instructions:
+`{WORKFLOW_TOOLS_OWNERSHIP_LINE}`, when the resolved workflow-tool list is non-empty, is one line per tool:
+`- Live execution state belongs to {TOOL_DISPLAY_NAME} at {OWNED_PATHS}; use its lifecycle and never hand-edit those paths.`
+When empty, omit this line.
+
+`{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is non-empty — one bullet per tool:
 ```
 - Only engage {TOOL_DISPLAY_NAME} when the user's prompt explicitly names it
   or its plan/task artifacts (e.g. mentions {TOOL_DISPLAY_NAME} by name, or
@@ -363,57 +344,102 @@ non-empty — one bullet per tool, using its `displayName`,
   Do not substitute a manual or generic execution path once engaged. If the
   required workflow cannot be invoked, stop and report the blocker.
 ```
-Continue numbering until every resolved instruction has been rendered verbatim.
-Preserve instruction order. If any resolved instruction already says to stop
-and report the blocker when the workflow is unavailable, omit the equivalent
-final blocker sentence from the rendering; otherwise retain it.
-Repeat one such bullet per configured workflow tool. For a `generic strict
-fallback`, include the label `generic strict fallback` with that tool's bullet
-and report that tool-specific activation and resume guidance was not
-configured.
+When empty, omit `{WORKFLOW_TOOLS_BLOCK}` entirely without leaving a blank line.
 
-`{WORKFLOW_TOOLS_BLOCK}`, when the resolved workflow-tool list is
-empty — omit the workflow bullets, the pre-task workflow gate, and the
-`{WORKFLOW_TOOLS_BLOCK}` placeholder line entirely (don't leave a blank line
-in its place).
+#### Rendering `COMMIT_CONVENTION.md`
 
-`{IMPORT_BLOCK}`, when `supportsImports` is true:
+Scaffold `COMMIT_CONVENTION.md` at the project root:
+
+```markdown
+# Commit Convention
+
+This repository follows the [Conventional Commits v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/#summary) specification.
+
+## Structure
+
 ```
-@docs/PROJECT_CONTEXT.md
-@HANDOFF.md
-@AGENTS.local.md
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
 ```
 
-`{IMPORT_BLOCK}`, when `supportsImports` is false:
-- When `{TARGET_AGENTS}` has length 1:
-```
-See:
-- docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
-- HANDOFF.md — the running log between agents, per plan/task
-- AGENTS.local.md — local private notes and personal overrides (gitignored)
+## Types
 
-({AGENT_NAME} doesn't support `@path` imports like Claude Code does —
-read the files above manually at the start of every session, or wire
-this into a startup script if your setup supports one.)
-```
-- When `{TARGET_AGENTS}` has length > 1:
-```
-See:
-- docs/PROJECT_CONTEXT.md — tech stack, conventions, build commands
-- HANDOFF.md — the running log between agents, per plan/task
-- AGENTS.local.md — local private notes and personal overrides (gitignored)
+- `feat`: (correlates with `MINOR` in SemVer) A new feature or capability
+- `fix`: (correlates with `PATCH` in SemVer) A bug fix
+- `docs`: Documentation only changes
+- `style`: Changes that do not affect the meaning of the code (white-space, formatting, semi-colons, etc.)
+- `refactor`: A code change that neither fixes a bug nor adds a feature
+- `perf`: A code change that improves performance
+- `test`: Adding missing tests or correcting existing tests
+- `build`: Changes that affect the build system or external dependencies
+- `ci`: Changes to CI configuration files and scripts
+- `chore`: Other changes that don't modify src or test files
 
-({AGENT_NAMES_JOINED} do not support `@path` imports like Claude Code does —
-read the files above manually at the start of every session, or wire
-this into a startup script if your setup supports one.)
+## Breaking Changes
+
+Breaking changes (correlating with `MAJOR` in SemVer) MUST be signaled by:
+- An exclamation mark (`!`) immediately preceding the colon (e.g., `feat!: drop support for python 3.9` or `fix(api)!: alter response shape`), or
+- A `BREAKING CHANGE: <description>` entry in the footer.
+
+## Rules & Best Practices
+
+1. **Imperative Mood**: Use imperative present tense in description (e.g., "add feature", not "added feature" or "adds feature").
+2. **Case**: Lowercase type and description.
+3. **No Trailing Period**: Do not end the description line with a period.
+4. **Line Length**: Keep the header line concise (under 72 characters).
+5. **Scope**: Optional noun enclosed in parentheses describing the affected codebase section (e.g., `feat(config): ...`).
+6. **Body & Footers**: Optional. When provided, separate the header, body, and footers with a single blank line.
+7. **Clean Traceability**:
+   - Do NOT include agent identities, plan names, or task numbers in commit messages (traceability belongs in `HANDOFF.md` and workflow state).
+   - Do NOT add "Co-Authored-By", AI-attribution footers, or generator trailers to commits or PRs.
 ```
+
+- If `COMMIT_CONVENTION.md` does not exist: stage creation.
+- If `COMMIT_CONVENTION.md` exists: preserve byte-for-byte.
+
+#### Rendering `CLAUDE.md`
+
+When `claude` is an enabled agent in `{EFFECTIVE_CONFIG}`:
+Render a minimal redirect block that instructs Claude Code to read and follow `AGENTS.md`. Wrap this single instruction in an `agent-policy` managed block so that existing content outside the markers in `CLAUDE.md` is strictly preserved:
+
+```markdown
+<!-- agent-sync:agent-policy:start -->
+Read and follow [AGENTS.md](AGENTS.md) before doing anything in this repository.
+<!-- agent-sync:agent-policy:end -->
+```
+
+- If `CLAUDE.md` does not exist: stage creation of the file with the managed block above.
+- If `CLAUDE.md` already contains an `agent-policy` managed block: stage replacement of the block with the minimal instruction above, preserving every byte before and after.
+- If `CLAUDE.md` contains unrecognized unmarked content: prompt before inserting the managed block after a top-level heading or at byte zero.
+Because Claude Code follows `AGENTS.md`, and `AGENTS.md` directs agents to `AGENTS.local.md`, no `claude.local.md` is needed.
+
+#### Rendering `MEMORY.md`
+
+Scaffold a project-root `MEMORY.md` for project learnings, component pitfalls, and durable lessons:
+
+```markdown
+# Project Memory & Lessons
+
+<!-- agent-sync:memory:start -->
+## Lessons
+
+{UP_TO_FIVE_OBSERVED_ONE_LINE_LESSONS_OR_OMIT}
+<!-- agent-sync:memory:end -->
+```
+
+- If missing: stage creation.
+- If managed (`<!-- agent-sync:memory:start -->` ... `<!-- agent-sync:memory:end -->`): stage replacement of the managed block, preserving all unmanaged notes.
+- If unrecognized: ask before inserting or preserve.
+
+#### Rendering `HANDOFF.md`
 
 For a missing `HANDOFF.md`, `{AGENT_IDS_PIPE}` is every configured agent's id,
 joined with `|`. Render the title, then the exact managed block around its
 explanatory comment and template. Close the managed block before `---`; real
-handoff entries remain outside the block. For a managed or approved
-unrecognized file, replace or insert only this block and preserve every real
-entry outside it:
+handoff entries remain outside the block:
 
 ```markdown
 # Handoff Log
@@ -438,12 +464,10 @@ Do not log idle sessions or append duplicate historical entries.
 ---
 ```
 
-For `.claude/settings.json`:
-
-Detect vendor, dependency, and build directories (check for directory existence at repository root: `node_modules/`, `vendor/`, `.venv/`, `venv/`, `target/`, `dist/`, `build/`, `.next/`, `__pycache__/`, and inspect package manifests `package.json`, `composer.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`) to compile `{DETECTED_VENDOR_DIRS}`.
+#### Rendering `.claude/settings.json`
 
 If `.claude/settings.json` doesn't exist:
-- When vendor directories are detected (e.g. `node_modules`, `vendor`, `.venv`), render and stage these candidate bytes:
+- When vendor directories are detected, render and stage:
   ```json
   {
     "attribution": {
@@ -470,43 +494,20 @@ If `.claude/settings.json` doesn't exist:
     }
   }
   ```
-  Add a `Read(./{dir}/**)` entry under `permissions.ask` for each discovered vendor directory (e.g. `Read(./node_modules/**)`, `Read(./vendor/**)`, `Read(./.venv/**)`).
-- When no vendor directories are detected, render and stage:
-  ```json
-  {
-    "attribution": {
-      "commit": "",
-      "pr": "",
-      "sessionUrl": false
-    },
-    "hooks": {
-      "SessionEnd": [
-        {
-          "hooks": [
-            {
-              "type": "command",
-              "command": "python3 .agent-sync/scripts/archive.py"
-            }
-          ]
-        }
-      ]
-    }
-  }
-  ```
+  Add a `Read(./{dir}/**)` entry under `permissions.ask` for each discovered vendor directory.
+- When no vendor directories are detected, render and stage without `permissions.ask`.
 
 If `.claude/settings.json` already exists:
-- Read the existing file into memory.
-- Preserve all existing keys, attribution settings, and permission rules.
-- If `hooks.SessionEnd` is missing or does not include the `archive.py` hook command, merge/append the hook.
-- If `permissions.ask` is missing or does not include the detected vendor patterns (`Read(./{dir}/**)`), merge/append the missing patterns. If all are already present, stage byte-for-byte preservation.
+- Read into memory. Preserve all existing keys, attribution settings, and permissions.
+- If `hooks.SessionEnd` is missing or lacks the `archive.py` hook, merge/append the hook.
+- If `permissions.ask` is missing or lacks detected vendor patterns, merge/append them.
 
-After all candidate bytes exist, complete the earlier classification of every
-target and collect all approvals. Do not continue until `.agent-sync/config.json`
-(existing, migrated, or proposed), every resolved agent `contextFile`,
-`HANDOFF.md`, and `.claude/settings.json` each has an original snapshot and a
-fully resolved staged disposition.
+#### Cleanup of `docs/PROJECT_CONTEXT.md`
 
-### 1B.1 — optional workflow model policy
+If `docs/PROJECT_CONTEXT.md` exists in the repository (e.g. from an older setup run):
+Stage its deletion in Phase 2, as its contents have been directly absorbed into `AGENTS.md`.
+
+### 1C.1 — optional workflow model policy
 
 Resolve optional `modelPolicy` from `{EFFECTIVE_CONFIG}`. Missing or `{}`
 means no model routing; preserve historical behavior and render no model-policy
@@ -536,11 +537,7 @@ absent, use: "Use only model-selection controls exposed by the current host;
 if none are available, request a manual model switch."
 
 For each resolved workflow/agent policy, render the following as an additional
-bullet in that agent's `agent-policy` managed block. For shared context files,
-label each bullet with its agent ID and say it applies only when running as
-that agent. Do not emit policies for agents assigned to other context files.
-No policy may activate a workflow: it applies only after the existing
-workflow gate has selected it, respecting the user's explicit opt-out.
+bullet in that agent's `agent-policy` managed block in `AGENTS.md`:
 
 - For {WORKFLOW_ID}, when running as {AGENT_ID}, use planning={PLANNING_MODEL},
   implementation={IMPLEMENTATION_MODEL}, review={REVIEW_MODEL},
@@ -583,184 +580,17 @@ If the policy is removed on a later setup run, remove its generated bullets
 with the managed-block replacement. Report every resolved phase mapping and
 whether host selection remains unverified; setup is not a model smoke test.
 
-### 1C — optional docs/PROJECT_CONTEXT.md generation
+### 1D — handling `--regenerate-context`
 
-Run this section when `{REGENERATE_CONTEXT}` is true (including repeat runs),
-or when first-run `{GENERATE_PROJECT_CONTEXT}` is yes. Otherwise skip 1C and
-leave the context file untouched. Use the already-resolved workflow list;
-hold context and backup writes for Phase 2 with all other setup targets.
-
-### 1C.1 — inspect the project and detect commit policy
-
-For a missing context or requested regeneration, inspect the repository
-before rendering; do not use placeholder text. Otherwise refresh only the
-managed policy and preserve all bytes outside its markers. Detection for a
-full render follows:
-
-- Read the relevant manifest, lockfile, README, task scripts, and CI config
-  to identify purpose, runtime, package manager, and commands. Inspect only
-  enough first-party files to confirm these facts.
-- Resolve `{CMD_VERIFY}` to the existing verification script, or a compact
-  combination of the project's test and lint/typecheck commands.
-  Resolve `{CMD_TEST_FOCUSED}` to one useful targeted-test example when known;
-  `{CMD_BUILD}` and `{CMD_SETUP}` only when they add necessary information.
-  Never invent commands; omit unavailable commands and report essential gaps.
-- Identify up to five non-obvious boundaries or constraints with concrete
-  paths. Do not produce a directory inventory or describe code readable at
-  the point of use. Prefer links to existing detailed documentation.
-- Detect vendor/build directories from the relevant manifests, .gitignore,
-  and root directory names (reuse setup's `{DETECTED_VENDOR_DIRS}` if available).
-  Record the unique existing paths as `{DETECTED_VENDOR_DIRS}`; do not scan
-  their contents. Render at most one exclusion bullet.
-
-Before target rendering, detect commit policy from local evidence only:
-
-1. Inspect commitlint files and `package.json` commitlint config.
-2. Inspect `COMMIT_CONVENTION.md` and case-insensitive filename variants.
-3. Inspect `CONTRIBUTING.md` and `.github/CONTRIBUTING.md`.
-4. Run `git config --local commit.template`. Resolve a relative value against
-   the repository root, then canonicalize both it and the repository root while
-   following symlinks. Use path-component containment rather than a string
-   prefix: accept only a readable regular file inside the repository root.
-   Reject and never inspect a missing, non-file, personal, or outside-root
-   template. For an accepted template, record `{COMMIT_SOURCE}` as its
-   repository-relative path, never as an absolute path.
-5. Otherwise inspect the latest 50 non-merge subjects. Infer a format only from
-   at least five subjects when at least 70 percent match one recognizable
-   subject pattern.
-6. Otherwise select Conventional Commits fallback:
-   `<type>(optional-scope): imperative description`.
-
-If explicit sources conflict, show them and ask which governs before writes.
-Do not use remote, global, or personal Git configuration as evidence. Inspect
-only commit subjects; never copy commit-body secrets or attribution.
-
-The Conventional Commits fallback types are `feat`, `fix`, `docs`, `refactor`,
-`test`, `build`, `ci`, and `chore`. Features use `feat`; hotfixes use `fix`.
-
-Define the following values before rendering the `project-policy` block:
-
-- `{COMMIT_FORMAT}` is the concise subject grammar.
-- `{COMMIT_SOURCE}` is a repository-relative source path, `git history`, or
-  `Conventional Commits fallback`.
-- `{COMMIT_EXAMPLE_1}` is one safe example from the source or a newly written
-  example that obeys the selected format.
-
-### 1C.2 — render and classify docs/PROJECT_CONTEXT.md
-
-Using the resolved configuration and commit policy, render the proposed
-`docs/PROJECT_CONTEXT.md` using the compact structure below.
-
-For a new or regenerated file, aim for 80 lines; require at most 120 lines and 1,200 words
-(including the managed block). Keep only facts that change how an agent works.
-Omit empty sections, unknown/unused commands, placeholder comments, "none" or
-"not detected" filler, directory inventories, duplicate rules, session history,
-and the decisions log. Do not duplicate commands already covered by verify.
-Use at most five boundary bullets and five one-line lessons; capture only
-observed pitfalls that cannot be adequately enforced by tests or tooling.
-Do not fabricate lessons on first setup. Link to existing detailed docs when
-needed rather than copying them or creating an overflow document automatically.
-
-```markdown
-# Project Context
-
-## Overview
-{PROJECT_PURPOSE_AND_STACK_IN_TWO_SENTENCES}
-
-## Commands
-- Verify: `{CMD_VERIFY}`
-- Focused test: `{CMD_TEST_FOCUSED}`
-- Build: `{CMD_BUILD}`
-- Setup: `{CMD_SETUP}`
-
-## Boundaries
-{UP_TO_FIVE_ACTIONABLE_PATH_SPECIFIC_CONSTRAINTS}
-{VENDOR_EXCLUSION_IF_DETECTED}
-
-## Conventions
-<!-- agent-sync:project-policy:start -->
-- Commit format: {COMMIT_FORMAT}
-- Commit source: {COMMIT_SOURCE}
-- Commit example: `{COMMIT_EXAMPLE_1}`
-{WORKFLOW_TOOLS_PROJECT_CONTEXT_BLOCK}
-- Think Before Coding: State consequential assumptions and tradeoffs; ask when ambiguity changes the result, and suggest a simpler approach when appropriate.
-- Simplicity First: Implement only the requested behavior with the smallest clear solution; avoid speculative features, configuration, and abstractions.
-- Surgical Changes: Match local style, change only what the task requires, and remove only code made unused by your changes; flag unrelated cleanup separately.
-- Learning: Keep up to five one-line lessons (25 words each) as `Component: pitfall → action`; merge duplicates, replace obsolete entries, and prefer regression tests.
-- Context upkeep: Aim for 80 lines, at most 120 lines and 1,200 words; keep actionable facts once, link to existing detail, and omit history, progress, and empty sections.
-<!-- agent-sync:project-policy:end -->
-{NON_OBVIOUS_PROJECT_STYLE_IF_ANY}
-
-## Lessons
-{UP_TO_FIVE_OBSERVED_ONE_LINE_LESSONS_OR_OMIT_SECTION}
-```
-
-The `project-policy` managed block includes commit/workflow policy, the three
-coding principles, and the learning/context upkeep rules. Keep technical
-facts and lessons outside it. The principles apply to every configured agent,
-independent of workflow and model choice.
-
-Before applying a new or regenerated file, count candidate lines and whitespace-delimited
-words. If over budget, remove repetition and link to existing detail, preserving
-all required policy. If required policy alone cannot fit, report the conflict
-before writing rather than silently dropping instructions.
-
-Without regeneration, for an existing file, replace only the managed block; never apply the new
-template or size limit by deleting unmanaged content. Report an oversized
-existing file and offer a separate, explicitly requested cleanup. When the user
-requests that cleanup, retain unique actionable constraints and commands;
-remove obsolete, redundant, or historical material. Normal reruns must continue
-to preserve unmanaged bytes, even when they exceed the new budget.
-
-When `{REGENERATE_CONTEXT}` is true, an existing well-formed managed or
-unmarked file is eligible for full regeneration. Read its entire contents and
-rescan the repository. Carry forward still-valid project-specific constraints
-and lessons; remove duplicates, obsolete facts, and history. Do not silently
-discard a unique constraint merely to fit the size budget; report any
-unresolved conflict before writes. Show the proposed diff during preflight.
-The explicit flag authorizes this replacement; no second confirmation is
-needed. Malformed markers remain preserved with a reported defect.
-
-For each existing file staged for regeneration, reserve a unique missing path
-`.agent-sync/backups/PROJECT_CONTEXT.<unique-id>.md` during read-only preflight
-and stage an exact-byte backup of the original snapshot. Never overwrite an
-existing backup. A missing context needs creation, not a backup. Record
-`regenerated` as the disposition for an existing whole-file replacement.
-Apply the compact line/word budget to regenerated files as well as new files.
-
-Without a regeneration disposition, classify `docs/PROJECT_CONTEXT.md` as:
-- `missing`: stage creation of the full render.
-- `managed`: exactly one non-nested matching `project-policy` marker pair
-  exists; stage replacement of the markers and all bytes between them while
-  preserving every byte before and after.
-- `unrecognized`: unmarked content; show the proposed block and ask before
-  inserting it after a top-level title or at byte zero. On no, stage
-  byte-for-byte preservation.
-- `malformed`: one marker missing, duplicate markers, end before start, or a
-  nested managed marker; stage byte-for-byte preservation, report the exact
-  defect, and never guess or ask to overwrite it.
-
-The workflow ownership line inside the `project-policy` block, when the
-resolved workflow-tool list is non-empty, is one line per tool:
-
-```
-- Live execution state (task briefs, reports, progress) is owned by
-  {TOOL_DISPLAY_NAME} at `{ownedPath1}`, `{ownedPath2}`, ... — don't
-  hand-edit these or create files there yourself; that's the tool's
-  job.
-```
-
-When the resolved workflow-tool list is empty, omit its ownership line.
-
-For `{VENDOR_EXCLUSION_IF_DETECTED}`, render one bullet naming the detected
-vendor/build paths to avoid unless the task requires them; omit it if none
-are detected. Count this bullet within the five-boundary limit.
-
-After the candidate bytes exist, complete classification and collect any
-required approval. Do not continue until `docs/PROJECT_CONTEXT.md` has an
-original byte snapshot (or recorded absence) and a fully resolved staged
-disposition. Stage its result for Phase 2 alongside this command's other
-targets.
+When `{REGENERATE_CONTEXT}` is true (via `--regenerate-context`):
+- Rescan the repository as detailed in 1B to re-detect project purpose, stack,
+  commands, boundaries, vendor directories, and lessons.
+- Reserve a unique missing path `.agent-sync/backups/AGENTS.<unique-id>.md`
+  during read-only preflight and stage an exact-byte backup of the original
+  `AGENTS.md` snapshot. Never overwrite an existing backup.
+- Stage replacement of `AGENTS.md` managed context block with the refreshed
+  sections, while carrying forward still-valid user constraints.
+- Record `regenerated` as the disposition for `AGENTS.md`.
 
 ## Phase 2 — apply the fully resolved preflight plan
 
@@ -776,12 +606,13 @@ rendering, classification, prompts, or user decisions:
 - Apply `{CONFIG_MIGRATION}` if one was staged (write `.agent-sync/config.json`,
   delete root `.agent-sync.json`); on first run, write the staged
   `.agent-sync/config.json`; otherwise preserve the existing configuration.
-- For each managed Markdown target (agent `contextFile`s, `HANDOFF.md`, and
-  `docs/PROJECT_CONTEXT.md` if staged in 1C), perform its staged creation,
-  managed-block update, full regeneration, known-legacy migration, approved insertion, or
-  byte-for-byte preservation exactly as classified.
+- For each managed Markdown target (`AGENTS.md`, `COMMIT_CONVENTION.md`,
+  `CLAUDE.md`, `MEMORY.md`, and `HANDOFF.md`), perform its staged creation,
+  managed-block update, full regeneration, approved insertion, or byte-for-byte
+  preservation exactly as classified.
+- Delete `docs/PROJECT_CONTEXT.md` if staged for removal.
 - Create `.claude/settings.json` when its staged disposition is `missing`; update it
-  if missing vendor permission rules were merged; otherwise preserve it byte-for-byte.
+  if missing vendor permission rules or hooks were merged; otherwise preserve it byte-for-byte.
 
 ## Phase 3 — verify and report every target
 
@@ -790,17 +621,16 @@ entire context matches the staged full render; report `regenerated`, the
 backup path, and final line/word counts. Unmanaged-byte preservation applies
 only to ordinary refreshes, not explicitly requested full regeneration.
 
-Re-read every target after application: `.agent-sync/config.json`, every
-resolved agent `contextFile`, `HANDOFF.md`, `.claude/settings.json`, and
-`docs/PROJECT_CONTEXT.md` if it was generated in 1C. Compare each result with
-the staged bytes and original snapshot. Verify created files match their full
-render; ordinary managed-block updates preserve all unmanaged bytes; migrated legacy
-files match the proposed managed render; and preserved files, including
-declined unrecognized and malformed targets, remain byte-for-byte unchanged.
+Re-read every target after application: `.agent-sync/config.json`, `AGENTS.md`,
+`COMMIT_CONVENTION.md`, `CLAUDE.md` (if enabled), `MEMORY.md`, `HANDOFF.md`, and `.claude/settings.json`.
+Compare each result with the staged bytes and original snapshot. Verify created
+files match their full render; ordinary managed-block updates preserve all unmanaged
+bytes; and preserved files, including declined unrecognized and malformed targets,
+remain byte-for-byte unchanged.
+Verify `docs/PROJECT_CONTEXT.md` is removed if it previously existed.
 Stop and report any mismatch.
 
-Report one disposition for every target: created, updated, regenerated, migrated, or
-preserved, including the reason for preservation. Report the config migration
-if one occurred. If `docs/PROJECT_CONTEXT.md` was generated in 1C, also report
-its commit-policy source and which sections came from real project signals
-and any essential gaps, plus line/word counts and any existing-file budget warning.
+Report one disposition for every target: created, updated, regenerated,
+deleted, or preserved, including the reason for preservation. Report the config migration
+if one occurred. Report commit format (`<type>(optional-scope): imperative description`),
+detected commands, line/word counts, and any existing-file budget warning.

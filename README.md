@@ -7,28 +7,28 @@ they work on the same repo — without duplicating what
 
 ## What this solves
 
-- **Cross-tool project memory** — Claude Code reads `CLAUDE.md`, Codex
-  reads `AGENTS.md`, other agents read their own context file. None of
-  them read each other's natively, so project context (tech stack,
-  conventions, build commands) needs one canonical place all of them
-  point to: `docs/PROJECT_CONTEXT.md`.
-- **Shared context file disambiguation** — When multiple configured agents
-  share a single context file (such as Codex and Antigravity both reading
-  `AGENTS.md`), agent-sync generates self-disambiguating multi-agent instructions
-  so each agent identifies itself properly in handoffs and task claims without
-  overwriting each other.
+- **Universal project memory in `AGENTS.md`** — All agents (Codex, Antigravity,
+  Cursor, Grok, and Claude Code via a minimal `CLAUDE.md` redirect) read a
+  single canonical instructions and project context file: `AGENTS.md`. No separate
+  `docs/PROJECT_CONTEXT.md` is required.
+- **Minimal `CLAUDE.md` bridge** — Claude Code natively expects `CLAUDE.md`, so
+  agent-sync scaffolds a minimal managed pointer directing Claude Code to read
+  and follow `AGENTS.md`. Because `AGENTS.md` references `AGENTS.local.md`, there
+  is no need for `claude.local.md`.
+- **Durable learnings in `MEMORY.md`** — Project learnings, component pitfalls,
+  and lessons are maintained in `MEMORY.md` at the project root, keeping
+  `AGENTS.md` focused on actionable instructions and boundaries.
 - **Cross-tool handoff** — Superpowers tracks task state within a plan,
   but nothing tracks which agent is working which task right now, or
   leaves notes for whichever agent picks up the work next. That's
   `HANDOFF.md`.
 - **Token cost & context conservation** — Auto-discovers dependency and vendor
-  directories (`node_modules`, `vendor`, `.venv`, etc.) during setup and
-  project-context generation, adds a compact exclusion boundary in
-  `docs/PROJECT_CONTEXT.md`, and scaffolds `permissions.ask` in
-  `.claude/settings.json` to prevent agents from wasting context on third-party code.
-- **No manual re-explaining** — `docs/PROJECT_CONTEXT.md` is generated
-  by inspecting your actual repo, not hand-written from a blank
-  template.
+  directories (`node_modules`, `vendor`, `.venv`, etc.) during setup,
+  adds a compact exclusion boundary in `AGENTS.md`, and scaffolds
+  `permissions.ask` in `.claude/settings.json` to prevent agents from wasting
+  context on third-party code.
+- **No manual re-explaining** — `AGENTS.md` and `MEMORY.md` are populated by
+  inspecting your actual repo, not hand-written from a blank template.
 - **Clean git history** — neither agent identity nor AI-attribution
   trailers leak into commits.
 
@@ -70,42 +70,20 @@ In any project, run:
 
 First run: it asks which agents are working this repo (offering built-in
 defaults for Claude Code, Codex, Antigravity, Grok, Gemini, and Cursor — see
-`registry/agents.json` — plus support for custom agents), which
+`registry/agents.json` — plus support for custom agents) and which
 workflow/plan-execution tools are in use (offering Superpowers by default —
 see `registry/workflow-tools.json` — plus support for none or a custom
-tool), and whether to also generate `docs/PROJECT_CONTEXT.md` now. It then
-writes `.agent-sync/config.json`, context files for configured agents (grouping
-agents that share a context file, such as Codex, Antigravity, and Grok sharing
-`AGENTS.md`, with self-disambiguating multi-agent instructions), `HANDOFF.md`,
-and `.claude/settings.json` (scaffolding `permissions.ask` for discovered vendor
-directories).
+tool). It then writes `.agent-sync/config.json`, `AGENTS.md` (with full project
+context and agent instructions), `CLAUDE.md` (a minimal managed redirect to
+`AGENTS.md`), `MEMORY.md` (for project learnings and component pitfalls),
+`HANDOFF.md`, and `.claude/settings.json` (scaffolding `permissions.ask` for
+discovered vendor directories).
 
 Re-running without regeneration is safe. Generated policy is confined to managed blocks, so a
-rerun replaces only those blocks and preserves surrounding content. It safely
-migrates only recognized historical renderings; unrecognized or malformed
+rerun replaces only those blocks and preserves surrounding content; unrecognized or malformed
 files are left for review rather than overwritten. A pre-existing root
 `.agent-sync.json` from an older install is migrated automatically to
 `.agent-sync/config.json` the first time any agent-sync command runs.
-
-To generate `docs/PROJECT_CONTEXT.md` after declining it during setup, or to
-refresh agent-sync's managed project-policy block, run:
-
-```
-/agent-sync:project-context
-```
-
-It performs full repository detection and rendering when the file is
-missing or `--regenerate` is supplied:
-it inspects package manifests, lockfiles, README, test/lint config, git log,
-and `.gitignore`, and auto-discovers dependency and vendor directories
-(`node_modules`, `vendor`, `.venv`, etc.), then writes real content instead of a
-blank template. The compact context targets 80 lines, with a ceiling of 120 lines
-and 1,200 words: purpose/stack, essential commands, up to five boundaries, shared
-policy, and at most five one-line lessons. Unknown fields, empty sections,
-duplicate facts, architecture inventories, and historical decisions are omitted.
-Lessons use `Component: pitfall → action`; merge duplicates and replace obsolete
-entries, keeping testable regressions in tests. Detected vendor paths share one
-boundary bullet.
 
 Shared policy includes concise versions of the first three
 [Karpathy-inspired principles](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/README.md#the-four-principles-in-detail):
@@ -113,31 +91,21 @@ state meaningful assumptions before coding, choose the simplest sufficient
 implementation, and keep changes confined to the requested work. These apply
 to all configured agents and models and refresh with the managed policy block.
 
-On a rerun without `--regenerate`, ownership is
-deliberately narrower: it refreshes only the managed `project-policy` block and
-preserves every byte outside that block. Technical context, architecture notes,
-and other user-maintained sections are therefore not automatically refreshed
-after stack changes. An oversized existing file is reported, not automatically
-trimmed.
-Requires `/agent-sync:setup` to have run at least once.
-
-To rescan the repository and replace an existing context with the compact
-template, run either command:
+To rescan the repository and refresh project context inside `AGENTS.md`, run:
 
 ```text
-/agent-sync:project-context --regenerate
 /agent-sync:setup --regenerate-context
 ```
 
-Both retain still-valid project constraints and lessons, remove redundant or
-obsolete content, and show the proposed diff before applying it. The flag
-authorizes whole-file replacement, including content outside managed markers.
-The original is saved byte-for-byte to a unique
-`.agent-sync/backups/PROJECT_CONTEXT.<unique-id>.md` before replacement; the
-command reports that path so you can recover it. Broken markers are preserved
-and reported. Without the flag, existing preservation behavior is unchanged.
-The setup flag also works on repeat runs and leaves existing configuration
-choices intact.
+This rescans package manifests, lockfiles, README, test/lint config, git log,
+and `.gitignore`, and auto-discovers dependency and vendor directories
+(`node_modules`, `vendor`, `.venv`, etc.). It retains still-valid project
+constraints, removes redundant or obsolete content, and shows the proposed diff
+before applying it. The original `AGENTS.md` is saved byte-for-byte to a unique
+`.agent-sync/backups/AGENTS.<unique-id>.md` before replacement; the command
+reports that path so you can recover it. Broken markers are preserved and
+reported. The setup flag also works on repeat runs and leaves existing
+configuration choices intact.
 
 `HANDOFF.md` grows every session. To move finished plans' entries out into
 `.agent-sync/HANDOFF.archive.md` and keep the active log short, run:
@@ -243,9 +211,9 @@ workflow-owned state or globally installed skills are modified.
 
 ## Workflow
 
-1. Start each session by reading `HANDOFF.md` then
-   `docs/PROJECT_CONTEXT.md` (agents with `@path` import support, like
-   Claude Code, do this automatically).
+1. Start each session by reading `HANDOFF.md`, `MEMORY.md`, and
+   `AGENTS.md` (Claude Code starts at `CLAUDE.md` which points directly to
+   `AGENTS.md`).
 2. Claim a task by updating that plan's entry in `HANDOFF.md` in-place
    (or creating an entry if starting a new plan): `Claiming: plan-name/task-N`.
 3. Before plan-scoped work, inspect each configured workflow's activation
@@ -280,9 +248,9 @@ workflow-owned state or globally installed skills are modified.
   `~/.claude/settings.json`.
 - Agent identity only ever appears in `HANDOFF.md` — never in commit
   messages or trailers.
-- Keep `docs/PROJECT_CONTEXT.md` as the only place real project
-  knowledge lives; the per-agent context files are thin pointers —
-  don't let them drift into duplicate, conflicting content.
+- Keep `AGENTS.md` as the central place real project knowledge and
+  instructions live; `CLAUDE.md` is a minimal pointer — don't let instructions
+  drift into duplicate, conflicting content.
 - Workflow/plan-execution tools (Superpowers by default, or any custom
   tool listed in `.agent-sync/config.json`) own their own state paths entirely
   — this plugin doesn't scaffold, own, or instruct agents to write into

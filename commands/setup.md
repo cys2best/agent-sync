@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Glob, Grep, Write, Edit
 ## Overview
 
 Scaffold or update shared multi-agent context files (`AGENTS.md`, `CLAUDE.md`, `MEMORY.md`, `COMMIT_CONVENTION.md`, `HANDOFF.md`, and `.claude/settings.json`).
-File rendering, project stack detection, and managed-block updates are deterministically executed by `.agent-sync/scripts/setup.py` using templates in `templates/`.
+File rendering, project stack detection, and managed-block updates are deterministically executed by `skills/setup/scripts/setup.py` using templates in `skills/setup/templates/`.
 
 ## Phase 1 — Resolve configuration and options
 
@@ -24,7 +24,7 @@ File rendering, project stack detection, and managed-block updates are determini
 Run the deterministic setup helper:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT:-.}/.agent-sync/scripts/setup.py" [args]
+python3 "${CLAUDE_PLUGIN_ROOT:-.}/skills/setup/scripts/setup.py" [args]
 ```
 
 Arguments:
@@ -35,7 +35,7 @@ Arguments:
 
 The script will:
 - Inspect project stack, commands, vendor directories, and boundaries.
-- Render target files using modular templates (`templates/*.template`).
+- Render target files using modular templates (`skills/setup/templates/*.template`).
 - Preserve any custom content outside managed markers (`<!-- agent-sync:...:start -->` ... `<!-- agent-sync:...:end -->`).
 - Preserve `COMMIT_CONVENTION.md` byte-for-byte if it already exists.
 - Configure `.claude/settings.json` with the `archive.py` hook and vendor permission limits.

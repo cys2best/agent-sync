@@ -29,28 +29,31 @@ def find_plugin_root():
     if "CLAUDE_PLUGIN_ROOT" in os.environ and os.path.isdir(os.environ["CLAUDE_PLUGIN_ROOT"]):
         return os.path.abspath(os.environ["CLAUDE_PLUGIN_ROOT"])
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    # Check parent dirs
-    candidate = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    if os.path.exists(os.path.join(candidate, "registry", "agents.json")):
-        return candidate
-    candidate2 = os.path.abspath(os.path.join(script_dir, ".."))
-    if os.path.exists(os.path.join(candidate2, "registry", "agents.json")):
-        return candidate2
+    # Check parent dirs: from skills/setup/scripts, root is 3 levels up
+    for levels in [3, 2, 1]:
+        candidate = os.path.abspath(os.path.join(script_dir, *[".."] * levels))
+        if os.path.exists(os.path.join(candidate, "registry", "agents.json")):
+            return candidate
     return os.getcwd()
 
 def find_templates_dir(plugin_root, custom_dir=None):
     if custom_dir and os.path.isdir(custom_dir):
         return os.path.abspath(custom_dir)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    skill_dir = os.path.abspath(os.path.join(script_dir, ".."))
     candidates = [
+        os.path.join(skill_dir, "templates"),
+        os.path.join(skill_dir, "template"),
+        os.path.join(plugin_root, "skills", "setup", "templates"),
+        os.path.join(plugin_root, "skills", "setup", "template"),
         os.path.join(plugin_root, "templates"),
-        os.path.join(plugin_root, ".agent-sync", "templates"),
-        os.path.join(os.getcwd(), "templates"),
-        os.path.join(os.getcwd(), ".agent-sync", "templates"),
+        os.path.join(os.getcwd(), "skills", "setup", "templates"),
+        os.path.join(os.getcwd(), "skills", "setup", "template"),
     ]
     for c in candidates:
         if os.path.isdir(c):
             return os.path.abspath(c)
-    return os.path.join(plugin_root, "templates")
+    return os.path.join(skill_dir, "templates")
 
 def load_registry(plugin_root, registry_name):
     path = os.path.join(plugin_root, "registry", f"{registry_name}.json")

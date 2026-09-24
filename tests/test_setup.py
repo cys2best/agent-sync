@@ -9,7 +9,7 @@ import json
 class TestSetupScript(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
-        self.script_path = os.path.abspath(".agent-sync/scripts/setup.py")
+        self.script_path = os.path.abspath("skills/setup/scripts/setup.py")
         self.plugin_root = os.path.abspath(".")
 
     def tearDown(self):

@@ -46,9 +46,12 @@ class TestPluginManifest(unittest.TestCase):
         self.assertIsInstance(session_start_hooks, list)
         self.assertTrue(len(session_start_hooks) > 0)
 
-        entry = session_start_hooks[0]
+        entry = session_start_hooks[0]["hooks"][0]
         self.assertEqual(entry.get("type"), "command")
-        self.assertIn("bun run agent-mem/bin/agent-mem.ts hook session-start", entry.get("command", ""))
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook session-start", entry.get("command", ""))
+
+        stop_entry = hooks["Stop"][0]["hooks"][0]
+        self.assertIn("hook transcript", stop_entry.get("command", ""))
 
     def test_mem_search_skill_metadata_and_instructions(self):
         self.assertTrue(os.path.isfile(self.mem_search_skill_path), "skills/mem-search/SKILL.md must exist")

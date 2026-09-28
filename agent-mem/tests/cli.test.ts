@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createMemoryServer } from "../src/daemon/server";
 import type { Server } from "bun";
 
@@ -134,6 +134,73 @@ describe("CLI entry point", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Recorded observation [");
     expect(stdout).toContain("tokens)");
+  });
+
+  it("hook transcript records chat turns once from an Antigravity Stop payload", async () => {
+    const tmpDir = join(import.meta.dir, "__transcript_test__");
+    mkdirSync(tmpDir, { recursive: true });
+    const transcriptPath = join(tmpDir, "transcript.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        { step_index: 0, type: "USER_INPUT", content: "<USER_REQUEST>\nwhy is quokkadeploy failing\n</USER_REQUEST>" },
+        { step_index: 1, type: "PLANNER_RESPONSE", content: "quokkadeploy needs a token refresh." },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n")
+    );
+
+    const run = async () => {
+      const proc = Bun.spawn(["bun", "run", cliPath, "hook", "transcript", "--output-format", "antigravity"], {
+        stdin: new Blob([JSON.stringify({ conversationId: "conv-1", workspacePaths: [tmpDir], transcriptPath })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const stdout = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      return stdout;
+    };
+
+    try {
+      expect(JSON.parse(await run())).toEqual({ decision: "" });
+      await run();
+
+      const res = await fetch(`http://127.0.0.1:${testPort}/api/search?q=quokkadeploy`);
+      const results = ((await res.json()) as any).results;
+      expect(results.map((r: any) => r.type).sort()).toEqual(["assistant_reply", "user_prompt"]);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("hook transcript reads the Claude Code transcript_path field", async () => {
+    const tmpDir = join(import.meta.dir, "__claude_transcript_test__");
+    mkdirSync(tmpDir, { recursive: true });
+    const transcriptPath = join(tmpDir, "session.jsonl");
+    writeFileSync(
+      transcriptPath,
+      JSON.stringify({ type: "user", uuid: "u1", message: { role: "user", content: "explain wombatcache eviction" } })
+    );
+
+    try {
+      const proc = Bun.spawn(["bun", "run", cliPath, "hook", "transcript"], {
+        stdin: new Blob([JSON.stringify({ session_id: "claude-1", cwd: tmpDir, transcript_path: transcriptPath })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const stdout = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      expect(stdout).toContain("Recorded 1 chat message(s)");
+
+      const res = await fetch(`http://127.0.0.1:${testPort}/api/search?q=wombatcache`);
+      const results = ((await res.json()) as any).results;
+      expect(results).toHaveLength(1);
+      expect(results[0].type).toBe("user_prompt");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("executes search command and formats results", async () => {
@@ -294,8 +361,22 @@ describe("CLI entry point", () => {
       expect(hooks["agent-mem"]).toHaveProperty("PreInvocation");
       expect(hooks["agent-mem"].PreInvocation[0].command).toContain("agent-mem.ts");
       expect(hooks["agent-mem"].PreInvocation[0].command).toContain("--output-format antigravity");
+      expect(hooks["agent-mem"].Stop[0].command).toContain("hook transcript --output-format antigravity");
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it("setup --agent claude prints nested SessionStart and Stop hooks", async () => {
+    const proc = Bun.spawn(["bun", "run", cliPath, "setup", "--agent", "claude"], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const stdout = await new Response(proc.stdout).text();
+    expect(await proc.exited).toBe(0);
+
+    const config = JSON.parse(stdout.slice(stdout.indexOf("{")));
+    expect(config.hooks.SessionStart[0].hooks[0].command).toContain("hook session-start");
+    expect(config.hooks.Stop[0].hooks[0].command).toContain("hook transcript");
   });
 });

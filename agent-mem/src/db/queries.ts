@@ -105,12 +105,13 @@ export function insertEvent(db: Database, event: EventRecord): void {
   );
 }
 
-export function insertObservation(db: Database, obs: Observation): void {
+/** Returns false when an observation with the same id already exists. */
+export function insertObservation(db: Database, obs: Observation): boolean {
   const stmt = db.prepare(`
-    INSERT INTO observations (id, session_id, project_id, type, summary, content, tokens_approx, created_at)
+    INSERT OR IGNORE INTO observations (id, session_id, project_id, type, summary, content, tokens_approx, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(
+  const result = stmt.run(
     obs.id,
     obs.sessionId,
     obs.projectId,
@@ -120,6 +121,7 @@ export function insertObservation(db: Database, obs: Observation): void {
     obs.tokensApprox,
     obs.createdAt
   );
+  return result.changes > 0;
 }
 
 export function searchObservations(

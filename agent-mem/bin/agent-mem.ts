@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { createMemoryServer } from "../src/daemon/server";
+import { parseTranscript } from "../src/context/transcript";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 const args = process.argv.slice(2);
@@ -15,7 +16,7 @@ Usage: agent-mem <command> [options]
 
 Commands:
   daemon [--port <num>]          Run the persistent memory worker daemon
-  hook <event> [options]         Trigger a lifecycle hook (session-start, post-tool, session-end)
+  hook <event> [options]         Trigger a lifecycle hook (session-start, post-tool, transcript, session-end)
   search <query> [--limit <n>]   Search project memory using SQLite FTS5
   get <observation-id>           Retrieve exact content of an observation
   digest                         Output the compact startup digest for this project
@@ -72,9 +73,9 @@ if (command === "daemon") {
   // Read stdin — Antigravity hooks send JSON payload, must drain to avoid hanging
   const stdinData = await readStdinJson();
 
-  // Resolve project path: prefer stdin workspacePaths, then --project flag, then cwd
+  // Resolve project path: prefer stdin workspacePaths (Antigravity) or cwd (Claude Code), then --project flag, then cwd
   const projectFlagPath = getArgValue("--project");
-  const stdinProjectPath = stdinData.workspacePaths?.[0];
+  const stdinProjectPath = stdinData.workspacePaths?.[0] || stdinData.cwd;
   const projectPath = stdinProjectPath || projectFlagPath || process.cwd();
   const projectId = getProjectId(projectPath);
   const projectName = projectPath.split("/").pop() || "project";
@@ -194,6 +195,46 @@ if (command === "daemon") {
       console.log(JSON.stringify({}));
     } else {
       console.log(`Recorded observation [${data.observationId}] (~${data.tokensApprox} tokens)`);
+    }
+  } else if (event === "transcript") {
+    // Stop hook: Antigravity sends transcriptPath/conversationId, Claude Code sends transcript_path/session_id
+    const transcriptPath: string | undefined = stdinData.transcriptPath || stdinData.transcript_path;
+    const sessionId = stdinData.conversationId || stdinData.session_id || dataObj.sessionId;
+
+    let messages: ReturnType<typeof parseTranscript> = [];
+    if (transcriptPath) {
+      // Antigravity truncates long fields in transcript.jsonl; transcript_full.jsonl keeps them intact
+      const fullPath = join(dirname(transcriptPath), "transcript_full.jsonl");
+      const source = transcriptPath.endsWith("/transcript.jsonl") && existsSync(fullPath) ? fullPath : transcriptPath;
+      if (existsSync(source)) messages = parseTranscript(readFileSync(source, "utf-8"));
+    }
+
+    let recorded = 0;
+    if (messages.length > 0) {
+      const res = await fetch(`${serverUrl}/api/hook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "chat",
+          projectId,
+          projectName,
+          sessionId,
+          agentType: stdinData.conversationId ? "antigravity" : process.env.AGENT_TYPE || "claude",
+          messages,
+        }),
+      });
+      if (!res.ok) {
+        console.error(`Request failed (${res.status}): ${await res.text()}`);
+        process.exit(1);
+      }
+      recorded = ((await res.json()) as any).recorded;
+    }
+
+    if (outputFormat === "antigravity") {
+      // Stop contract: any decision other than "continue" lets the agent stop
+      console.log(JSON.stringify({ decision: "" }));
+    } else {
+      console.log(`Recorded ${recorded} chat message(s)`);
     }
   } else if (event === "session-end") {
     const sessionIndex = args.indexOf("--session");
@@ -337,6 +378,13 @@ if (command === "daemon") {
             ],
           },
         ],
+        Stop: [
+          {
+            type: "command",
+            command: `bun run ${binPath} hook transcript --output-format antigravity`,
+            timeout: 10,
+          },
+        ],
       },
     };
 
@@ -382,29 +430,10 @@ if (command === "daemon") {
       process.exit(1);
     }
   } else if (agentType === "claude") {
+    const hook = (sub: string) => [{ hooks: [{ type: "command", command: `bun run ${binPath} hook ${sub}` }] }];
     console.log(`Claude Code setup:`);
-    console.log(`\nAdd the following to your .claude/settings.json or project .claude-plugin/hooks.json:\n`);
-    console.log(JSON.stringify({
-      hooks: {
-        SessionStart: [
-          {
-            type: "command",
-            command: `bun run ${binPath} hook session-start`,
-          },
-        ],
-      },
-    }, null, 2));
-    console.log(`\nOr create .claude-plugin/hooks.json with:`);
-    console.log(JSON.stringify({
-      hooks: {
-        SessionStart: [
-          {
-            type: "command",
-            command: `bun run ${binPath} hook session-start`,
-          },
-        ],
-      },
-    }, null, 2));
+    console.log(`\nAdd the following to your ~/.claude/settings.json or project .claude/settings.json:\n`);
+    console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript") } }, null, 2));
   } else if (agentType === "codex") {
     console.log(`Codex setup:`);
     console.log(`\nCodex doesn't support lifecycle hooks natively yet.`);

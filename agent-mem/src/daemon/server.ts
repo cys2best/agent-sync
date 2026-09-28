@@ -153,6 +153,52 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
           return jsonResponse({ status: "ok", observationId: obsId, tokensApprox });
         }
 
+        if (event === "chat") {
+          const sessionId = body.sessionId || "default";
+          const projectId = body.projectId || "default";
+          const messages: any[] = Array.isArray(body.messages) ? body.messages : [];
+
+          upsertProject(db, {
+            id: projectId,
+            name: body.projectName || projectId,
+            rootPath: body.rootPath || process.cwd(),
+          });
+          const existingSession = db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId);
+          if (!existingSession) {
+            insertSession(db, {
+              id: sessionId,
+              projectId,
+              agentType: body.agentType || "unknown",
+              startedAt: Date.now(),
+              status: "active",
+            });
+          }
+
+          let recorded = 0;
+          for (const msg of messages) {
+            if (typeof msg?.text !== "string" || !msg.text.trim()) continue;
+            const sanitized = sanitizePayload(msg.text).sanitized;
+            const oneLine = sanitized.replace(/\s+/g, " ").trim();
+            const observation = {
+              // Deterministic id so re-reading the same transcript never duplicates turns
+              id: `chat_${sessionId}_${msg.key}`,
+              sessionId,
+              projectId,
+              type: msg.role === "assistant" ? "assistant_reply" : "user_prompt",
+              summary: oneLine.length > 200 ? oneLine.slice(0, 197) + "..." : oneLine,
+              content: sanitized,
+              tokensApprox: estimateTokenCount(sanitized),
+              createdAt: typeof msg.createdAt === "number" ? msg.createdAt : Date.now(),
+            };
+            if (insertObservation(db, observation)) {
+              recorded++;
+              sseHub.broadcast("observation", observation);
+            }
+          }
+
+          return jsonResponse({ status: "ok", recorded });
+        }
+
         if (event === "session-end") {
           if (body.sessionId) {
             updateSession(db, body.sessionId, {

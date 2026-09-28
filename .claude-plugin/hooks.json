@@ -2,8 +2,22 @@
   "hooks": {
     "SessionStart": [
       {
-        "type": "command",
-        "command": "bun run agent-mem/bin/agent-mem.ts hook session-start"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook transcript"
+          }
+        ]
       }
     ]
   }

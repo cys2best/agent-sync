@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { getRecentObservations, getRecentSessions } from "../db/queries";
+import { getProjectTotals, getRecentObservations, getRecentSessions } from "../db/queries";
 import { getConfig } from "../config";
 import { join } from "node:path";
 
@@ -21,6 +21,12 @@ function formatRelativeTime(timestamp: number): string {
   return `${diffDays}d ago`;
 }
 
+const MAX_LINE_CHARS = 120;
+
+function clip(text: string): string {
+  return text.length > MAX_LINE_CHARS ? text.slice(0, MAX_LINE_CHARS - 3) + "..." : text;
+}
+
 export function generateCompactDigest(
   db: Database,
   projectId: string,
@@ -32,32 +38,69 @@ export function generateCompactDigest(
   const observations = getRecentObservations(db, projectId, 5);
 
   const base = webViewerUrl.replace(/\/+$/, "");
-  const lines: string[] = [];
-  lines.push("=== AGENT-MEM: PROJECT MEMORY ===");
-  lines.push(`Project: ${projectName} | Live Viewer: ${base}/p/${projectId}`);
+  const head: string[] = [];
+  head.push("=== AGENT-MEM: PROJECT MEMORY ===");
+  head.push(`Project: ${projectName} | Live Viewer: ${base}/p/${projectId}`);
 
   if (sessions.length === 0) {
-    lines.push("Recent Activity: No past recorded sessions yet. This session is the first recorded.");
+    head.push("Recent Activity: No past recorded sessions yet. This session is the first recorded.");
   } else {
-    lines.push("Recent Activity:");
+    head.push("Recent Activity:");
     for (const session of sessions) {
       const timeStr = formatRelativeTime(session.startedAt);
       const desc = session.summary || session.title || "Working session";
-      lines.push(`• [${session.id}] (${session.agentType}, ${timeStr}): ${desc}`);
-    }
-
-    if (observations.length > 0) {
-      lines.push("Key Recent Observations:");
-      for (const obs of observations) {
-        lines.push(`  - [${obs.id}] (${obs.type}): ${obs.summary}`);
-      }
+      head.push(`• [${session.id}] (${session.agentType}, ${timeStr}): ${clip(desc)}`);
     }
   }
 
   const cli = `bun run "${CLI_PATH}"`;
-  lines.push(`Commands: Search past context with \`${cli} search <query>\` or retrieve citation with \`${cli} get <id>\`.`);
-  lines.push("=================================");
+  const tail = [
+    `Commands: Search past context with \`${cli} search <query>\` or retrieve citation with \`${cli} get <id>\`.`,
+    "=================================",
+  ];
+
+  // Observations fill whatever budget remains, newest first, so the digest never grows with history
+  let used = estimateTokenCount([...head, ...tail].join("\n"));
+  const obsHeader = "Key Recent Observations:";
+  const obsLines: string[] = [];
+  for (const obs of observations) {
+    const line = `  - [${obs.id}] (${obs.type}): ${clip(obs.summary)}`;
+    const cost = estimateTokenCount(line + "\n") + (obsLines.length === 0 ? estimateTokenCount(obsHeader + "\n") : 0);
+    if (used + cost > config.maxDigestTokens) break;
+    used += cost;
+    obsLines.push(line);
+  }
+
+  const lines = obsLines.length > 0 ? [...head, obsHeader, ...obsLines, ...tail] : [...head, ...tail];
 
   const fullDigest = lines.join("\n");
   return fullDigest;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+// Short, user-facing status line shown in the terminal at session start
+export function generateUserSummary(
+  db: Database,
+  projectId: string,
+  projectName: string,
+  webViewerUrl: string = "http://localhost:3777"
+): string {
+  const totals = getProjectTotals(db, projectId);
+  const base = webViewerUrl.replace(/\/+$/, "");
+  const lines: string[] = [`agent-mem · ${projectName}`];
+
+  if (totals.observations === 0 || totals.lastObservationAt === null) {
+    lines.push("No memory yet. This session will seed it; later sessions get recent context injected automatically.");
+  } else {
+    lines.push(
+      `${plural(totals.sessions, "session")} · ${plural(totals.observations, "observation")} · last activity ${formatRelativeTime(totals.lastObservationAt)}`
+    );
+    lines.push("Search past work: /agent-sync:mem-search");
+  }
+  lines.push(`Live viewer: ${base}/p/${projectId}`);
+
+  return lines.join("\n");
 }

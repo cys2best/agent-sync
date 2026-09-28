@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { initializeSchema } from "../src/db/schema";
+import { getConfig } from "../src/config";
 import { insertObservation, insertSession, upsertProject } from "../src/db/queries";
-import { estimateTokenCount, generateCompactDigest } from "../src/context/digest";
+import { estimateTokenCount, generateCompactDigest, generateUserSummary } from "../src/context/digest";
 
 describe("compact digest generator", () => {
   let db: Database;
@@ -60,6 +61,59 @@ describe("compact digest generator", () => {
     const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents");
     expect(digest).toContain("No past recorded sessions yet");
     expect(digest).toContain("http://localhost:3777/p/proj_demo");
+  });
+
+  it("summarizes an empty project for the user", () => {
+    const summary = generateUserSummary(db, "proj_demo", "superpower-dual-agents", "http://localhost:3777");
+    expect(summary).toContain("agent-mem · superpower-dual-agents");
+    expect(summary).toContain("No memory yet");
+    expect(summary).toContain("Live viewer: http://localhost:3777/p/proj_demo");
+  });
+
+  it("summarizes recorded memory totals for the user", () => {
+    insertSession(db, {
+      id: "ses_01",
+      projectId: "proj_demo",
+      agentType: "claude",
+      startedAt: Date.now() - 7200000,
+      status: "completed",
+    });
+    insertObservation(db, {
+      id: "obs_01",
+      sessionId: "ses_01",
+      projectId: "proj_demo",
+      type: "file_edit",
+      summary: "Edited schema",
+      content: "",
+      tokensApprox: 5,
+      createdAt: Date.now() - 7200000,
+    });
+
+    const summary = generateUserSummary(db, "proj_demo", "superpower-dual-agents", "http://localhost:3777");
+    expect(summary).toContain("1 session · 1 observation · last activity 2h ago");
+    expect(summary).not.toContain("No memory yet");
+    expect(summary).toContain("/agent-sync:mem-search");
+  });
+
+  it("keeps the digest within the token budget as observations grow", () => {
+    for (let i = 0; i < 50; i++) {
+      insertObservation(db, {
+        id: `obs_${i}`,
+        sessionId: "ses_01",
+        projectId: "proj_demo",
+        type: "assistant_reply",
+        summary: "x".repeat(200),
+        content: "",
+        tokensApprox: 50,
+        createdAt: Date.now() - i * 1000,
+      });
+    }
+    insertSession(db, { id: "ses_01", projectId: "proj_demo", agentType: "claude", startedAt: Date.now(), status: "active" });
+
+    const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents");
+    expect(estimateTokenCount(digest)).toBeLessThanOrEqual(getConfig().maxDigestTokens);
+    expect(digest).toContain("[obs_0]");
+    expect(digest).toContain("search <query>");
   });
 
   it("prints runnable commands with the absolute CLI path", () => {

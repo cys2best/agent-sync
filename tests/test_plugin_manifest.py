@@ -48,7 +48,7 @@ class TestPluginManifest(unittest.TestCase):
 
         entry = session_start_hooks[0]["hooks"][0]
         self.assertEqual(entry.get("type"), "command")
-        self.assertIn("${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook session-start", entry.get("command", ""))
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook session-start --output-format claude", entry.get("command", ""))
 
         stop_entry = hooks["Stop"][0]["hooks"][0]
         self.assertIn("hook transcript", stop_entry.get("command", ""))

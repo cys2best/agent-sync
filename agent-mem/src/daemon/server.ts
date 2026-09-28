@@ -11,7 +11,7 @@ import {
   upsertProject,
 } from "../db/queries";
 import { sanitizePayload } from "../privacy/redactor";
-import { estimateTokenCount, generateCompactDigest } from "../context/digest";
+import { estimateTokenCount, generateCompactDigest, generateUserSummary } from "../context/digest";
 import { SSEHub, getWebUiHtml } from "./sse";
 import { getConfig } from "../config";
 
@@ -106,9 +106,10 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
           });
 
           const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`);
+          const summary = generateUserSummary(db, projectId, projectName, `http://localhost:${port}`);
           sseHub.broadcast("session_start", { sessionId, projectId, agentType });
 
-          return jsonResponse({ status: "ok", sessionId, digest });
+          return jsonResponse({ status: "ok", sessionId, digest, summary });
         }
 
         if (event === "post-tool") {

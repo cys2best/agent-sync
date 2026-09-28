@@ -321,6 +321,26 @@ describe("CLI entry point", () => {
     expect(parsed.injectSteps[0].ephemeralMessage).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
   });
 
+  it("outputs Claude Code JSON with user summary via --output-format claude", async () => {
+    const proc = Bun.spawn(
+      ["bun", "run", cliPath, "hook", "session-start", "--output-format", "claude"],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: new Blob([JSON.stringify({ cwd: process.cwd() })]),
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      }
+    );
+    const stdout = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+
+    expect(exitCode).toBe(0);
+    const parsed = JSON.parse(stdout.trim());
+    expect(parsed.systemMessage).toContain("agent-mem · ");
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("SessionStart");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
+  });
+
   it("shows setup in help text", async () => {
     const proc = Bun.spawn(["bun", "run", cliPath, "--help"], {
       stdout: "pipe",

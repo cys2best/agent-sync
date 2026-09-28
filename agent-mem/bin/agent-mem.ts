@@ -117,6 +117,13 @@ if (command === "daemon") {
         injectSteps: [{ ephemeralMessage: data.digest }],
       };
       console.log(JSON.stringify(output));
+    } else if (outputFormat === "claude") {
+      // Claude Code SessionStart contract: systemMessage is shown to the user, additionalContext goes to the model
+      const output = {
+        systemMessage: data.summary,
+        hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: data.digest },
+      };
+      console.log(JSON.stringify(output));
     } else {
       console.log(data.digest);
     }
@@ -430,7 +437,7 @@ if (command === "daemon") {
       process.exit(1);
     }
   } else if (agentType === "claude") {
-    const hook = (sub: string) => [{ hooks: [{ type: "command", command: `bun run ${binPath} hook ${sub}` }] }];
+    const hook = (sub: string) => [{ hooks: [{ type: "command", command: `bun run ${binPath} hook ${sub}${sub === "session-start" ? " --output-format claude" : ""}` }] }];
     console.log(`Claude Code setup:`);
     console.log(`\nAdd the following to your ~/.claude/settings.json or project .claude/settings.json:\n`);
     console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript") } }, null, 2));

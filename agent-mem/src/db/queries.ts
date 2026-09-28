@@ -207,6 +207,19 @@ export function getRecentObservations(db: Database, projectId?: string, limit: n
   return db.prepare(sql).all(...params) as Observation[];
 }
 
+export function getProjectTotals(db: Database, projectId: string) {
+  const sessions = (db.prepare("SELECT COUNT(*) as count FROM sessions WHERE project_id = ?").get(projectId) as any)?.count || 0;
+  const obs = db.prepare(
+    "SELECT COUNT(*) as count, MAX(created_at) as lastAt FROM observations WHERE project_id = ?"
+  ).get(projectId) as any;
+
+  return {
+    sessions,
+    observations: obs?.count || 0,
+    lastObservationAt: (obs?.lastAt as number | null) ?? null,
+  };
+}
+
 export function getStats(db: Database, projectId?: string) {
   let sessionSql = "SELECT COUNT(*) as count FROM sessions WHERE status = 'active'";
   let obsSql = "SELECT COUNT(*) as count FROM observations";

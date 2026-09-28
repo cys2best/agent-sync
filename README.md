@@ -143,8 +143,13 @@ current workspace):
 bun run <plugin-dir>/agent-mem/bin/agent-mem.ts setup --agent antigravity
 ```
 
-**Codex** — no lifecycle hooks; `setup --agent codex` prints an `AGENTS.md`
-line pointing at the search command.
+**Codex** — install the hooks once. This merges `SessionStart` and `Stop` into
+`~/.codex/hooks.json` (or `.codex/hooks.json` with `--scope project`), keeping
+any hooks already there; rerun it after upgrading the plugin:
+
+```bash
+bun run <plugin-dir>/agent-mem/bin/agent-mem.ts setup --agent codex
+```
 
 Search past work with the `/agent-sync:mem-search` skill, or directly:
 
@@ -152,6 +157,10 @@ Search past work with the `/agent-sync:mem-search` skill, or directly:
 bun run <plugin-dir>/agent-mem/bin/agent-mem.ts search "<query>"
 bun run <plugin-dir>/agent-mem/bin/agent-mem.ts get <observation-id>
 ```
+
+When a session stops, its transcript is recorded and summarized as the first
+prompt plus the files edited, so the next agent sees lines like
+`[ses] (codex, 2h ago): fix login retries · edited guard.ts, token.ts`.
 
 The injected digest is capped at about 250 tokens (`maxDigestTokens` in
 `agent-mem/src/config.ts`): the three most recent sessions plus as many recent

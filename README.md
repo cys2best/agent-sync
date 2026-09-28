@@ -119,6 +119,46 @@ ever claimed has a matching `Finished:` line and no entry still lists it
 under `Next:`. Entries that mix a finished plan with a still-open one stay
 in `HANDOFF.md` until both are finished.
 
+## Persistent memory (agent-mem)
+
+`agent-mem` records sessions, tool activity, and chat turns across agents into a
+local SQLite store, and injects a short project digest at the start of each
+session. It needs [Bun](https://bun.sh) on `PATH`; the daemon starts on demand
+at `http://localhost:3777`.
+
+**Claude Code** — nothing to configure. The plugin's `SessionStart` and `Stop`
+hooks run automatically. At session start you see a summary like:
+
+```
+agent-mem · my-project
+12 sessions · 48 observations · last activity 2h ago
+Search past work: /agent-sync:mem-search
+Live viewer: http://localhost:3777/p/<project-id>
+```
+
+**Antigravity** — install the hooks once (global, or `--scope project` for the
+current workspace):
+
+```bash
+bun run <plugin-dir>/agent-mem/bin/agent-mem.ts setup --agent antigravity
+```
+
+**Codex** — no lifecycle hooks; `setup --agent codex` prints an `AGENTS.md`
+line pointing at the search command.
+
+Search past work with the `/agent-sync:mem-search` skill, or directly:
+
+```bash
+bun run <plugin-dir>/agent-mem/bin/agent-mem.ts search "<query>"
+bun run <plugin-dir>/agent-mem/bin/agent-mem.ts get <observation-id>
+```
+
+The injected digest is capped at about 250 tokens (`maxDigestTokens` in
+`agent-mem/src/config.ts`): the three most recent sessions plus as many recent
+observations as fit, each clipped to 120 characters. It does not grow with
+history; older work stays searchable instead. Wrap private details in
+`<private>` tags to keep them out of the store.
+
 ## Workflow model selection
 
 To spend more reasoning on planning and review, add optional `modelPolicy`

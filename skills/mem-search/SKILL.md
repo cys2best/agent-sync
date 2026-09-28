@@ -9,9 +9,12 @@ Query past project activity, architectural decisions, and tool observations with
 
 ## Usage
 
+The CLI ships with this plugin at `../../agent-mem/bin/agent-mem.ts`, relative to this skill's directory. Resolve it to an absolute path first; do not run it relative to the project cwd:
+`AGENT_MEM="<this skill's directory>/../../agent-mem/bin/agent-mem.ts"`
+
 1. **Search Memory (Progressive Disclosure):**
    Run:
-   `bun run agent-mem/bin/agent-mem.ts search "<query>"`
+   `bun run "$AGENT_MEM" search "<query>"`
    Returns ranked observation summaries with token cost estimates:
    ```
    • [obs_8f12] (~420 tokens): Added JWT verification middleware to src/auth/guard.ts
@@ -21,7 +24,7 @@ Query past project activity, architectural decisions, and tool observations with
 2. **Retrieve Full Citation Content:**
    If you need the full code diff or output from a specific citation:
    Run:
-   `bun run agent-mem/bin/agent-mem.ts get <observation-id>`
+   `bun run "$AGENT_MEM" get <observation-id>`
 
 3. **Live Web Viewer:**
    Open `http://localhost:3777` in your browser for a live stream of agent events.

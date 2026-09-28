@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { join } from "node:path";
 import { initializeSchema } from "../src/db/schema";
 import { insertObservation, insertSession, upsertProject } from "../src/db/queries";
 import { estimateTokenCount, generateCompactDigest } from "../src/context/digest";
@@ -59,6 +60,13 @@ describe("compact digest generator", () => {
     const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents");
     expect(digest).toContain("No past recorded sessions yet");
     expect(digest).toContain("http://localhost:3777/p/proj_demo");
+  });
+
+  it("prints runnable commands with the absolute CLI path", () => {
+    const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents");
+    const cli = join(import.meta.dir, "..", "bin", "agent-mem.ts");
+    expect(digest).toContain(`bun run "${cli}" search <query>`);
+    expect(digest).toContain(`bun run "${cli}" get <id>`);
   });
 
   it("normalizes web viewer URLs by stripping trailing slashes", () => {

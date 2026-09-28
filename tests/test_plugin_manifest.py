@@ -69,8 +69,11 @@ class TestPluginManifest(unittest.TestCase):
 
         # Validate instruction content
         self.assertIn("mem-search: Persistent Project Memory Search", content)
-        self.assertIn("agent-mem/bin/agent-mem.ts search", content)
-        self.assertIn("agent-mem/bin/agent-mem.ts get", content)
+        # Commands must resolve from the skill directory, not the caller's cwd
+        self.assertIn("../../agent-mem/bin/agent-mem.ts", content)
+        self.assertNotIn("bun run agent-mem/bin/", content)
+        self.assertIn('"$AGENT_MEM" search', content)
+        self.assertIn('"$AGENT_MEM" get', content)
         self.assertIn("http://localhost:3777", content)
 
     def test_all_skills_have_valid_structure(self):

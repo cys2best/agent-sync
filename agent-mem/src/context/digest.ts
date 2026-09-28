@@ -1,6 +1,9 @@
 import { Database } from "bun:sqlite";
 import { getRecentObservations, getRecentSessions } from "../db/queries";
 import { getConfig } from "../config";
+import { join } from "node:path";
+
+const CLI_PATH = join(import.meta.dir, "..", "..", "bin", "agent-mem.ts");
 
 export function estimateTokenCount(text: string): number {
   // Standard heuristic: ~4 characters per token in English code & text
@@ -51,7 +54,8 @@ export function generateCompactDigest(
     }
   }
 
-  lines.push("Commands: Search past context with `agent-mem search <query>` or retrieve citation with `agent-mem get <id>`.");
+  const cli = `bun run "${CLI_PATH}"`;
+  lines.push(`Commands: Search past context with \`${cli} search <query>\` or retrieve citation with \`${cli} get <id>\`.`);
   lines.push("=================================");
 
   const fullDigest = lines.join("\n");

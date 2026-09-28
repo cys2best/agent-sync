@@ -96,14 +96,19 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
             name: projectName,
             rootPath: body.rootPath || process.cwd(),
           });
-          insertSession(db, {
-            id: sessionId,
-            projectId,
-            agentType,
-            title: body.title,
-            startedAt: Date.now(),
-            status: "active",
-          });
+          // Agents resend the same session id on resume/compact; reopen it instead of inserting a duplicate
+          if (db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId)) {
+            updateSession(db, sessionId, { status: "active" });
+          } else {
+            insertSession(db, {
+              id: sessionId,
+              projectId,
+              agentType,
+              title: body.title,
+              startedAt: Date.now(),
+              status: "active",
+            });
+          }
 
           const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`);
           const summary = generateUserSummary(db, projectId, projectName, `http://localhost:${port}`);
@@ -173,6 +178,10 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
               startedAt: Date.now(),
               status: "active",
             });
+          }
+
+          if (typeof body.summary === "string" && body.summary) {
+            updateSession(db, sessionId, { summary: body.summary });
           }
 
           let recorded = 0;

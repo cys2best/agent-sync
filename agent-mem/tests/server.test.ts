@@ -55,6 +55,43 @@ describe("memory daemon HTTP server", () => {
     expect(body.sessionId).toBeDefined();
   });
 
+  it("reuses the agent's session id so resume does not create a second session", async () => {
+    const start = () =>
+      fetch(`${baseUrl}/api/hook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "session-start", sessionId: "agent-ses-1", projectId: "proj_resume", agentType: "codex" }),
+      });
+
+    const first = await start();
+    const second = await start();
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(((await second.json()) as any).sessionId).toBe("agent-ses-1");
+
+    const digest = ((await (await fetch(`${baseUrl}/api/digest?project=proj_resume`)).json()) as any).digest;
+    expect(digest.match(/\[agent-ses-1\]/g)).toHaveLength(1);
+  });
+
+  it("stores a chat session summary and shows it in the digest", async () => {
+    const res = await fetch(`${baseUrl}/api/hook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "chat",
+        sessionId: "agent-ses-2",
+        projectId: "proj_summary",
+        agentType: "codex",
+        summary: "fix the login bug · edited guard.ts",
+        messages: [{ key: "k1", role: "user", text: "fix the login bug", createdAt: Date.now() }],
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const digest = ((await (await fetch(`${baseUrl}/api/digest?project=proj_summary`)).json()) as any).digest;
+    expect(digest).toContain("[agent-ses-2] (codex, just now): fix the login bug · edited guard.ts");
+  });
+
   it("handles /api/hook post-tool with private tag sanitization", async () => {
     const res = await fetch(`${baseUrl}/api/hook`, {
       method: "POST",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { createMemoryServer } from "../src/daemon/server";
-import { parseTranscript } from "../src/context/transcript";
+import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -24,7 +24,8 @@ Commands:
   help                           Show this help message
 
 Options for hook:
-  --output-format <fmt>          Output format: antigravity | claude | raw (default: raw)
+  --output-format <fmt>          Output format: antigravity | claude | codex | raw (default: raw)
+  --agent <type>                 Agent recording the session (default: antigravity when detected, else claude)
   --project <path>               Project path override
 
 Options for setup:
@@ -93,15 +94,20 @@ if (command === "daemon") {
 
   const serverUrl = await ensureDaemonRunning();
 
+  // Antigravity sends conversationId; Claude Code and Codex send session_id
+  const agentSessionId: string | undefined = stdinData.conversationId || stdinData.session_id;
+  const agentType = getArgValue("--agent") || (stdinData.conversationId ? "antigravity" : process.env.AGENT_TYPE || "claude");
+
   if (event === "session-start") {
     const res = await fetch(`${serverUrl}/api/hook`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         event: "session-start",
+        sessionId: agentSessionId,
         projectId,
         projectName,
-        agentType: process.env.AGENT_TYPE || "claude",
+        agentType,
         ...dataObj,
       }),
     });
@@ -117,8 +123,8 @@ if (command === "daemon") {
         injectSteps: [{ ephemeralMessage: data.digest }],
       };
       console.log(JSON.stringify(output));
-    } else if (outputFormat === "claude") {
-      // Claude Code SessionStart contract: systemMessage is shown to the user, additionalContext goes to the model
+    } else if (outputFormat === "claude" || outputFormat === "codex") {
+      // Claude Code and Codex share this SessionStart contract: systemMessage is shown to the user, additionalContext goes to the model
       const output = {
         systemMessage: data.summary,
         hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: data.digest },
@@ -206,14 +212,19 @@ if (command === "daemon") {
   } else if (event === "transcript") {
     // Stop hook: Antigravity sends transcriptPath/conversationId, Claude Code sends transcript_path/session_id
     const transcriptPath: string | undefined = stdinData.transcriptPath || stdinData.transcript_path;
-    const sessionId = stdinData.conversationId || stdinData.session_id || dataObj.sessionId;
+    const sessionId = agentSessionId || dataObj.sessionId;
 
     let messages: ReturnType<typeof parseTranscript> = [];
+    let editedFiles: string[] = [];
     if (transcriptPath) {
       // Antigravity truncates long fields in transcript.jsonl; transcript_full.jsonl keeps them intact
       const fullPath = join(dirname(transcriptPath), "transcript_full.jsonl");
       const source = transcriptPath.endsWith("/transcript.jsonl") && existsSync(fullPath) ? fullPath : transcriptPath;
-      if (existsSync(source)) messages = parseTranscript(readFileSync(source, "utf-8"));
+      if (existsSync(source)) {
+        const jsonl = readFileSync(source, "utf-8");
+        messages = parseTranscript(jsonl);
+        editedFiles = extractEditedFiles(jsonl);
+      }
     }
 
     let recorded = 0;
@@ -226,7 +237,8 @@ if (command === "daemon") {
           projectId,
           projectName,
           sessionId,
-          agentType: stdinData.conversationId ? "antigravity" : process.env.AGENT_TYPE || "claude",
+          agentType,
+          summary: summarizeSession(messages, editedFiles),
           messages,
         }),
       });
@@ -240,6 +252,9 @@ if (command === "daemon") {
     if (outputFormat === "antigravity") {
       // Stop contract: any decision other than "continue" lets the agent stop
       console.log(JSON.stringify({ decision: "" }));
+    } else if (outputFormat === "codex") {
+      // Codex requires a JSON object on stdout; an empty one lets the turn stop normally
+      console.log("{}");
     } else {
       console.log(`Recorded ${recorded} chat message(s)`);
     }
@@ -442,10 +457,42 @@ if (command === "daemon") {
     console.log(`\nAdd the following to your ~/.claude/settings.json or project .claude/settings.json:\n`);
     console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript") } }, null, 2));
   } else if (agentType === "codex") {
-    console.log(`Codex setup:`);
-    console.log(`\nCodex doesn't support lifecycle hooks natively yet.`);
-    console.log(`Add to your AGENTS.md or project instructions:`);
-    console.log(`\n  Persistent Memory: Query project history via skill \`mem-search\` or \`bun run ${binPath} search "<query>"\`.`);
+    const hooksFile =
+      scope === "project" ? join(process.cwd(), ".codex", "hooks.json") : scope === "global" ? join(homedir(), ".codex", "hooks.json") : "";
+    if (!hooksFile) {
+      console.error(`Unknown scope: ${scope}. Use 'global' or 'project'.`);
+      process.exit(1);
+    }
+
+    let existing: Record<string, any> = {};
+    if (existsSync(hooksFile)) {
+      try {
+        existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
+      } catch {
+        console.error(`Could not parse ${hooksFile}; fix or remove it, then rerun setup.`);
+        process.exit(1);
+      }
+    }
+
+    const hooks: Record<string, any[]> = existing.hooks ?? {};
+    const command = (sub: string) => `bun run "${binPath}" hook ${sub} --agent codex --output-format codex`;
+    const ours: Record<string, any> = {
+      SessionStart: { matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command: command("session-start"), timeout: 15 }] },
+      Stop: { hooks: [{ type: "command", command: command("transcript"), timeout: 30 }] },
+    };
+    for (const [eventName, group] of Object.entries(ours)) {
+      // Drop earlier agent-mem entries (any install path, so upgrades don't duplicate); keep everyone else's hooks
+      const others = (hooks[eventName] ?? [])
+        .map((g: any) => ({ ...g, hooks: (g.hooks ?? []).filter((h: any) => !/agent-mem\.ts"? hook /.test(String(h.command ?? ""))) }))
+        .filter((g: any) => g.hooks.length > 0);
+      hooks[eventName] = [...others, group];
+    }
+    existing.hooks = hooks;
+
+    mkdirSync(dirname(hooksFile), { recursive: true });
+    writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
+    console.log(`✅ Codex ${scope} hooks installed at: ${hooksFile}`);
+    console.log(`   SessionStart injects the project digest; Stop records the session transcript.`);
   } else {
     console.error(`Unknown agent type: ${agentType}. Supported: antigravity, claude, codex`);
     process.exit(1);

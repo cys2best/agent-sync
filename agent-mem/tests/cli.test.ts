@@ -203,6 +203,98 @@ describe("CLI entry point", () => {
     }
   });
 
+  it("hook session-start keeps the agent's session id", async () => {
+    const proc = Bun.spawn(["bun", "run", cliPath, "hook", "session-start"], {
+      stdin: new Blob([JSON.stringify({ session_id: "claude-ses-keep", cwd: "/tmp/agent-mem-keep" })]),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+    });
+    const stdout = await new Response(proc.stdout).text();
+    expect(await proc.exited).toBe(0);
+    expect(stdout).toContain("[claude-ses-keep]");
+  });
+
+  it("hook transcript summarizes a Codex session with --agent codex", async () => {
+    const tmpDir = join(import.meta.dir, "__codex_transcript_test__");
+    mkdirSync(tmpDir, { recursive: true });
+    const transcriptPath = join(tmpDir, "rollout.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: "response_item", payload: { type: "message", id: "m1", role: "user", content: [{ type: "input_text", text: "repair platypusqueue retries" }] } },
+        { type: "response_item", payload: { type: "custom_tool_call", name: "apply_patch", input: "*** Begin Patch\n*** Update File: src/queue.ts\n*** End Patch" } },
+        { type: "response_item", payload: { type: "message", id: "m2", role: "assistant", content: [{ type: "output_text", text: "Retries fixed." }] } },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n")
+    );
+
+    try {
+      const proc = Bun.spawn(["bun", "run", cliPath, "hook", "transcript", "--agent", "codex", "--output-format", "codex"], {
+        stdin: new Blob([JSON.stringify({ session_id: "codex-ses-1", cwd: tmpDir, transcript_path: transcriptPath })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const stdout = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      expect(JSON.parse(stdout)).toEqual({});
+
+      const start = Bun.spawn(["bun", "run", cliPath, "hook", "session-start", "--agent", "codex", "--output-format", "codex"], {
+        stdin: new Blob([JSON.stringify({ session_id: "codex-ses-2", cwd: tmpDir })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const parsed = JSON.parse(await new Response(start.stdout).text());
+      expect(await start.exited).toBe(0);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe("SessionStart");
+      expect(parsed.hookSpecificOutput.additionalContext).toContain(
+        "[codex-ses-1] (codex, just now): repair platypusqueue retries · edited queue.ts"
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("setup --agent codex --scope project merges hooks into .codex/hooks.json", async () => {
+    const tmpDir = join(import.meta.dir, "__setup_codex_workspace__");
+    const hooksFile = join(tmpDir, ".codex", "hooks.json");
+    mkdirSync(join(tmpDir, ".codex"), { recursive: true });
+    const otherHook = { type: "command", command: "echo keep-me" };
+    const staleHook = { type: "command", command: 'bun run "/old/0.7.0/agent-mem/bin/agent-mem.ts" hook session-start' };
+    writeFileSync(hooksFile, JSON.stringify({ hooks: { SessionStart: [{ hooks: [otherHook, staleHook] }] } }));
+
+    try {
+      const run = async () => {
+        const proc = Bun.spawn(["bun", "run", cliPath, "setup", "--agent", "codex", "--scope", "project"], {
+          stdout: "pipe",
+          stderr: "pipe",
+          cwd: tmpDir,
+        });
+        const stdout = await new Response(proc.stdout).text();
+        expect(await proc.exited).toBe(0);
+        return stdout;
+      };
+
+      expect(await run()).toContain("Codex project hooks installed");
+      await run();
+
+      const hooks = JSON.parse(readFileSync(hooksFile, "utf-8")).hooks;
+      const commands = (event: string) => hooks[event].flatMap((g: any) => g.hooks.map((h: any) => h.command));
+      expect(commands("SessionStart")).toContain("echo keep-me");
+      expect(commands("SessionStart").filter((c: string) => c.includes("agent-mem.ts"))).toHaveLength(1);
+      expect(commands("SessionStart").find((c: string) => c.includes("agent-mem.ts"))).toContain(
+        "hook session-start --agent codex --output-format codex"
+      );
+      expect(commands("Stop")).toHaveLength(1);
+      expect(commands("Stop")[0]).toContain("hook transcript --agent codex --output-format codex");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("executes search command and formats results", async () => {
     const proc = Bun.spawn(["bun", "run", cliPath, "search", "auth token"], {
       stdout: "pipe",

@@ -295,6 +295,48 @@ describe("CLI entry point", () => {
     }
   });
 
+  it("setup --agent antigravity refuses to overwrite a malformed hooks.json", async () => {
+    const tmpDir = join(import.meta.dir, "__setup_bad_antigravity__");
+    const hooksFile = join(tmpDir, ".agents", "hooks.json");
+    mkdirSync(join(tmpDir, ".agents"), { recursive: true });
+    writeFileSync(hooksFile, "{ not json");
+    try {
+      const proc = Bun.spawn(["bun", "run", cliPath, "setup", "--agent", "antigravity", "--scope", "project"], {
+        stdout: "pipe",
+        stderr: "pipe",
+        cwd: tmpDir,
+      });
+      const stderr = await new Response(proc.stderr).text();
+      expect(await proc.exited).toBe(1);
+      expect(stderr).toContain("Could not parse");
+      expect(readFileSync(hooksFile, "utf-8")).toBe("{ not json");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("setup --agent codex leaves hooks.json byte-identical on rerun", async () => {
+    const tmpDir = join(import.meta.dir, "__setup_codex_rerun__");
+    const hooksFile = join(tmpDir, ".codex", "hooks.json");
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      const run = async () => {
+        const proc = Bun.spawn(["bun", "run", cliPath, "setup", "--agent", "codex", "--scope", "project"], {
+          stdout: "pipe",
+          stderr: "pipe",
+          cwd: tmpDir,
+        });
+        expect(await proc.exited).toBe(0);
+      };
+      await run();
+      const first = readFileSync(hooksFile, "utf-8");
+      await run();
+      expect(readFileSync(hooksFile, "utf-8")).toBe(first);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("sessions lists interrupted sessions and handoff prints where one stopped", async () => {
     const dir = join(import.meta.dir, "__handoff_cli_test__");
     mkdirSync(dir, { recursive: true });

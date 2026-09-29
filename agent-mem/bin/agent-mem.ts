@@ -4,8 +4,9 @@ import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/co
 import { formatHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus } from "../src/context/handoff";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { installAntigravityHooks, installCodexHooks } from "../src/install/hooks";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 
 const args = process.argv.slice(2);
@@ -426,118 +427,37 @@ if (command === "daemon") {
   const binPath = resolve(join(import.meta.dir, "agent-mem.ts"));
 
   if (agentType === "antigravity") {
-    const hookEntry = {
-      "agent-mem": {
-        PreInvocation: [
-          {
-            type: "command",
-            command: `bun run ${binPath} hook session-start --output-format antigravity`,
-            timeout: 10,
-          },
-        ],
-        PostToolUse: [
-          {
-            matcher: "*",
-            hooks: [
-              {
-                type: "command",
-                command: `bun run ${binPath} hook post-tool --output-format antigravity`,
-                timeout: 10,
-              },
-            ],
-          },
-        ],
-        Stop: [
-          {
-            type: "command",
-            command: `bun run ${binPath} hook transcript --output-format antigravity`,
-            timeout: 10,
-          },
-        ],
-      },
-    };
-
-    if (scope === "global") {
-      const configDir = join(homedir(), ".gemini", "config");
-      const hooksFile = join(configDir, "hooks.json");
-
-      let existing: Record<string, any> = {};
-      if (existsSync(hooksFile)) {
-        try {
-          existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
-        } catch {
-          console.error(`Warning: Could not parse existing ${hooksFile}, will merge carefully.`);
-        }
-      }
-
-      // Merge: add/replace the "agent-mem" key, keep everything else
-      existing["agent-mem"] = hookEntry["agent-mem"];
-
-      mkdirSync(configDir, { recursive: true });
-      writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
-      console.log(`✅ Antigravity global hook installed at: ${hooksFile}`);
-      console.log(`   Hook command: bun run ${binPath} hook session-start --output-format antigravity`);
-      console.log(`\n   The agent-mem digest will be injected at the start of every Antigravity session.`);
-    } else if (scope === "project") {
-      const agentsDir = join(process.cwd(), ".agents");
-      const hooksFile = join(agentsDir, "hooks.json");
-
-      let existing: Record<string, any> = {};
-      if (existsSync(hooksFile)) {
-        try {
-          existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
-        } catch {}
-      }
-
-      existing["agent-mem"] = hookEntry["agent-mem"];
-
-      mkdirSync(agentsDir, { recursive: true });
-      writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
-      console.log(`✅ Antigravity project hook installed at: ${hooksFile}`);
-    } else {
+    if (scope !== "global" && scope !== "project") {
       console.error(`Unknown scope: ${scope}. Use 'global' or 'project'.`);
       process.exit(1);
     }
+    const hooksFile = scope === "global" ? join(homedir(), ".gemini", "config", "hooks.json") : join(process.cwd(), ".agents", "hooks.json");
+    try {
+      installAntigravityHooks(hooksFile, binPath);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(1);
+    }
+    console.log(`✅ Antigravity ${scope} hook installed at: ${hooksFile}`);
+    console.log(`   Hook command: bun run ${binPath} hook session-start --output-format antigravity`);
+    console.log(`\n   The agent-mem digest will be injected at the start of every Antigravity session.`);
   } else if (agentType === "claude") {
     const hook = (sub: string) => [{ hooks: [{ type: "command", command: `bun run ${binPath} hook ${sub}${sub === "session-start" ? " --output-format claude" : ""}` }] }];
     console.log(`Claude Code setup:`);
     console.log(`\nAdd the following to your ~/.claude/settings.json or project .claude/settings.json:\n`);
     console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript") } }, null, 2));
   } else if (agentType === "codex") {
-    const hooksFile =
-      scope === "project" ? join(process.cwd(), ".codex", "hooks.json") : scope === "global" ? join(homedir(), ".codex", "hooks.json") : "";
-    if (!hooksFile) {
+    if (scope !== "global" && scope !== "project") {
       console.error(`Unknown scope: ${scope}. Use 'global' or 'project'.`);
       process.exit(1);
     }
-
-    let existing: Record<string, any> = {};
-    if (existsSync(hooksFile)) {
-      try {
-        existing = JSON.parse(readFileSync(hooksFile, "utf-8"));
-      } catch {
-        console.error(`Could not parse ${hooksFile}; fix or remove it, then rerun setup.`);
-        process.exit(1);
-      }
+    const hooksFile = scope === "project" ? join(process.cwd(), ".codex", "hooks.json") : join(homedir(), ".codex", "hooks.json");
+    try {
+      installCodexHooks(hooksFile, binPath);
+    } catch (err) {
+      console.error((err as Error).message);
+      process.exit(1);
     }
-
-    const hooks: Record<string, any[]> = existing.hooks ?? {};
-    const command = (sub: string) => `bun run "${binPath}" hook ${sub} --agent codex --output-format codex`;
-    const ours: Record<string, any> = {
-      SessionStart: { matcher: "startup|resume|clear|compact", hooks: [{ type: "command", command: command("session-start"), timeout: 15 }] },
-      Stop: { hooks: [{ type: "command", command: command("transcript"), timeout: 30 }] },
-    };
-    for (const [eventName, group] of Object.entries(ours)) {
-      // Drop earlier agent-mem entries (any install path, so upgrades don't duplicate); keep everyone else's hooks
-      const others = (hooks[eventName] ?? [])
-        .map((g: any) => ({ ...g, hooks: (g.hooks ?? []).filter((h: any) => !/agent-mem\.ts"? hook /.test(String(h.command ?? ""))) }))
-        .filter((g: any) => g.hooks.length > 0);
-      hooks[eventName] = [...others, group];
-    }
-    existing.hooks = hooks;
-
-    mkdirSync(dirname(hooksFile), { recursive: true });
-    writeFileSync(hooksFile, JSON.stringify(existing, null, 2) + "\n");
     console.log(`✅ Codex ${scope} hooks installed at: ${hooksFile}`);
     console.log(`   SessionStart injects the project digest; Stop records the session transcript.`);
   } else {

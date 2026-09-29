@@ -162,6 +162,30 @@ When a session stops, its transcript is recorded and summarized as the first
 prompt plus the files edited, so the next agent sees lines like
 `[ses] (codex, 2h ago): fix login retries · edited guard.ts, token.ts`.
 
+### Resuming another agent's unfinished session
+
+When one agent stops mid-task (for example Claude hits its usage limit during
+a final review), switch to another agent and run:
+
+```
+/agent-sync:resume
+```
+
+It reads the stopped session's transcript straight from disk (so it works even
+when the limit cut off the Stop hook) and loads about 500 tokens: why it
+stopped, the task, the last replies, recent tool calls, the latest subagent
+result (with the path to its full report), and files changed. The agent then
+continues the in-progress step instead of starting over. When the previous
+session in a project stopped early, the startup summary says so:
+
+```
+⚠ claude session 9785cc73 stopped: rate_limit: You've hit your session limit (4m ago) — run /agent-sync:resume
+```
+
+The same data is available from the CLI: `agent-mem sessions` lists recent
+sessions with how each ended, and `agent-mem handoff [session-id]` prints one
+(default: the latest interrupted session).
+
 The injected digest is capped at about 250 tokens (`maxDigestTokens` in
 `agent-mem/src/config.ts`): the three most recent sessions plus as many recent
 observations as fit, each clipped to 120 characters. It does not grow with

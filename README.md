@@ -78,7 +78,13 @@ defaults for Claude Code, Codex, Antigravity, Grok, Gemini, and Cursor — see
 instructions, including when to search memory and resume), `CLAUDE.md` (a
 minimal managed redirect to `AGENTS.md`), `MEMORY.md` (for project learnings
 and component pitfalls), and `.claude/settings.json` (scaffolding
-`permissions.ask` for discovered vendor directories). For enabled Codex or
+`permissions.ask` for discovered vendor directories), plus `.agent-sync/TDD.md`:
+the default workflow agents follow for features and bug fixes when no plugin
+workflow such as Superpowers is in use (approved todo list, then
+red → green → refactor per task, with the list saved under
+`.agent-sync/todo/`, which setup adds to `.gitignore`, so another agent on the
+same machine can continue it). Edit it freely; setup
+keeps an existing copy. For enabled Codex or
 Antigravity agents whose global hooks lack agent-mem, it prints the one-line
 `agent-mem setup` command to run.
 

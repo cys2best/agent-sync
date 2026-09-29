@@ -9,6 +9,7 @@ import {
   insertEvent,
   insertObservation,
   insertSession,
+  pruneOldData,
   searchObservations,
   updateSession,
   upsertProject,
@@ -129,6 +130,45 @@ describe("database operations", () => {
     const columns = (old.prepare("PRAGMA table_info(sessions)").all() as any[]).map((c) => c.name);
     expect(columns).toContain("transcript_path");
     old.close();
+  });
+
+  it("prunes data with no activity inside the retention window", () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = 1_000 * DAY;
+    const obs = (id: string, sessionId: string, age: number) =>
+      insertObservation(db, {
+        id,
+        sessionId,
+        projectId: "proj_1",
+        type: "t",
+        summary: `prunetoken ${id}`,
+        content: "",
+        tokensApprox: 1,
+        createdAt: now - age * DAY,
+      });
+    upsertProject(db, { id: "proj_1", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "old", projectId: "proj_1", agentType: "claude", startedAt: now - 200 * DAY, status: "completed" });
+    insertSession(db, { id: "old-but-resumed", projectId: "proj_1", agentType: "claude", startedAt: now - 200 * DAY, status: "active" });
+    insertSession(db, { id: "old-but-ended-recently", projectId: "proj_1", agentType: "claude", startedAt: now - 200 * DAY, endedAt: now - 5 * DAY, status: "completed" });
+    insertSession(db, { id: "recent", projectId: "proj_1", agentType: "codex", startedAt: now - 10 * DAY, status: "active" });
+    obs("o_old", "old", 150);
+    obs("o_resumed_old", "old-but-resumed", 150);
+    obs("o_resumed_new", "old-but-resumed", 1);
+    obs("o_recent", "recent", 10);
+    insertEvent(db, { id: "e_old", sessionId: "recent", projectId: "proj_1", eventType: "x", timestamp: now - 120 * DAY, data: "{}" });
+    insertEvent(db, { id: "e_new", sessionId: "recent", projectId: "proj_1", eventType: "x", timestamp: now - 1 * DAY, data: "{}" });
+    upsertProject(db, { id: "proj_gone", name: "gone", rootPath: "/gone" });
+    db.prepare("UPDATE projects SET updated_at = ? WHERE id = 'proj_gone'").run(now - 100 * DAY);
+
+    expect(pruneOldData(db, 0, now)).toEqual({ observations: 0, events: 0, sessions: 0, projects: 0 });
+    expect(pruneOldData(db, 90, now)).toEqual({ observations: 2, events: 1, sessions: 1, projects: 1 });
+
+    const sessions = (db.prepare("SELECT id FROM sessions ORDER BY id").all() as any[]).map((r) => r.id);
+    expect(sessions).toEqual(["old-but-ended-recently", "old-but-resumed", "recent"]);
+    const remaining = (db.prepare("SELECT id FROM observations ORDER BY id").all() as any[]).map((r) => r.id);
+    expect(remaining).toEqual(["o_recent", "o_resumed_new"]);
+    expect(searchObservations(db, "prunetoken").map((o) => o.id).sort()).toEqual(["o_recent", "o_resumed_new"]);
+    expect(db.prepare("SELECT id FROM projects WHERE id = 'proj_gone'").get()).toBeNull();
   });
 
   it("retrieves recent observations ordered by createdAt DESC", () => {

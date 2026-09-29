@@ -13,6 +13,21 @@ describe("config module", () => {
     expect(Array.isArray(config.secretPatterns)).toBe(true);
   });
 
+  it("keeps 90 days of data by default and honours AGENT_MEM_RETENTION_DAYS", () => {
+    const original = process.env.AGENT_MEM_RETENTION_DAYS;
+    try {
+      delete process.env.AGENT_MEM_RETENTION_DAYS;
+      expect(getConfig().retentionDays).toBe(90);
+      process.env.AGENT_MEM_RETENTION_DAYS = "30";
+      expect(getConfig().retentionDays).toBe(30);
+      process.env.AGENT_MEM_RETENTION_DAYS = "not-a-number";
+      expect(getConfig().retentionDays).toBe(90);
+    } finally {
+      if (original !== undefined) process.env.AGENT_MEM_RETENTION_DAYS = original;
+      else delete process.env.AGENT_MEM_RETENTION_DAYS;
+    }
+  });
+
   it("respects AGENT_MEM_PORT environment variable", () => {
     const originalPort = process.env.AGENT_MEM_PORT;
     try {

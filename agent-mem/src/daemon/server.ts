@@ -1,10 +1,12 @@
 import type { Server } from "bun";
+import type { Database } from "bun:sqlite";
 import { openDatabase } from "../db/client";
 import {
   getObservationById,
   getRecentObservations,
   getRecentSessions,
   getStats,
+  pruneOldData,
   insertObservation,
   insertSession,
   searchObservations,
@@ -28,9 +30,34 @@ function jsonResponse(data: any, status = 200): Response {
   });
 }
 
+const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/** Prune now, then daily, for as long as the daemon runs. Returns undefined when retention is disabled. */
+export function startPruning(db: Database, retentionDays: number = getConfig().retentionDays) {
+  if (retentionDays <= 0) return undefined;
+  const run = () => {
+    try {
+      const pruned = pruneOldData(db, retentionDays);
+      if (Object.values(pruned).some((n) => n > 0)) {
+        console.log(
+          `agent-mem: pruned data older than ${retentionDays} days (${pruned.observations} observations, ${pruned.sessions} sessions, ${pruned.events} events, ${pruned.projects} projects)`
+        );
+      }
+    } catch (err) {
+      console.error("agent-mem: pruning failed:", err);
+    }
+  };
+  run();
+  const timer = setInterval(run, PRUNE_INTERVAL_MS);
+  // Never keep the process alive just for pruning
+  timer.unref?.();
+  return timer;
+}
+
 export function createMemoryServer(options?: { port?: number; dbPath?: string }): Server {
   const port = options?.port ?? getConfig().port;
   const db = openDatabase(options?.dbPath);
+  startPruning(db);
   const sseHub = new SSEHub();
   let uiHtml = "";
   try {

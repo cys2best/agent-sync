@@ -225,6 +225,38 @@ export function getProjectTotals(db: Database, projectId: string) {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Delete memory with no activity in the last `retentionDays`. Old observations and events go first;
+ * a session or project is removed only once nothing recent remains under it, so resumed work survives.
+ */
+export function pruneOldData(db: Database, retentionDays: number, now: number = Date.now()) {
+  const counts = { observations: 0, events: 0, sessions: 0, projects: 0 };
+  if (retentionDays <= 0) return counts;
+  const cutoff = now - retentionDays * DAY_MS;
+
+  db.transaction(() => {
+    // Count first: `changes` would also include the rows the FTS delete trigger removes
+    counts.observations = (db.prepare("SELECT COUNT(*) as n FROM observations WHERE created_at < ?").get(cutoff) as any).n;
+    db.prepare("DELETE FROM observations WHERE created_at < ?").run(cutoff);
+    counts.events = db.prepare("DELETE FROM events WHERE timestamp < ?").run(cutoff).changes;
+    counts.sessions = db
+      .prepare(`
+        DELETE FROM sessions
+        WHERE started_at < ? AND COALESCE(ended_at, 0) < ?
+          AND NOT EXISTS (SELECT 1 FROM observations o WHERE o.session_id = sessions.id)
+          AND NOT EXISTS (SELECT 1 FROM events e WHERE e.session_id = sessions.id)
+      `)
+      .run(cutoff, cutoff).changes;
+    counts.projects = db
+      .prepare("DELETE FROM projects WHERE updated_at < ? AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.project_id = projects.id)")
+      .run(cutoff).changes;
+  })();
+
+  return counts;
+}
+
 export function getStats(db: Database, projectId?: string) {
   let sessionSql = "SELECT COUNT(*) as count FROM sessions WHERE status = 'active'";
   let obsSql = "SELECT COUNT(*) as count FROM observations";

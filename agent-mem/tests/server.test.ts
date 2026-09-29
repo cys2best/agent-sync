@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { createMemoryServer } from "../src/daemon/server";
+import { createMemoryServer, startPruning } from "../src/daemon/server";
+import { Database } from "bun:sqlite";
+import { initializeSchema } from "../src/db/schema";
+import { insertObservation, insertSession, upsertProject } from "../src/db/queries";
 import { ensureDaemonRunning, isDaemonRunning, stopDaemon } from "../src/daemon/lifecycle";
 import type { Server } from "bun";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -16,6 +19,31 @@ describe("memory daemon HTTP server", () => {
 
   afterAll(() => {
     server.stop(true);
+  });
+
+  it("prunes expired data as soon as pruning starts, and not at all when retention is 0", () => {
+    const db = new Database(":memory:");
+    initializeSchema(db);
+    upsertProject(db, { id: "p", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "s", projectId: "p", agentType: "claude", startedAt: Date.now(), status: "active" });
+    insertObservation(db, {
+      id: "ancient",
+      sessionId: "s",
+      projectId: "p",
+      type: "t",
+      summary: "old",
+      content: "",
+      tokensApprox: 1,
+      createdAt: Date.now() - 400 * 24 * 60 * 60 * 1000,
+    });
+
+    expect(startPruning(db, 0)).toBeUndefined();
+    expect(db.prepare("SELECT id FROM observations").get()).not.toBeNull();
+
+    const timer = startPruning(db, 90);
+    clearInterval(timer);
+    expect(db.prepare("SELECT id FROM observations").get()).toBeNull();
+    db.close();
   });
 
   it("responds to /health with ok", async () => {

@@ -10,7 +10,16 @@ export interface AgentMemConfig {
   projectDbRelativePath: string;
   maxDigestTokens: number;
   maxRecentSessionsInDigest: number;
+  /** Days of inactivity after which data is pruned; 0 keeps everything. */
+  retentionDays: number;
   secretPatterns: RegExp[];
+}
+
+const DEFAULT_RETENTION_DAYS = 90;
+
+function parseRetentionDays(value: string | undefined): number {
+  const days = Number(value);
+  return value !== undefined && Number.isInteger(days) && days >= 0 ? days : DEFAULT_RETENTION_DAYS;
 }
 
 export function getConfig(): AgentMemConfig {
@@ -22,6 +31,7 @@ export function getConfig(): AgentMemConfig {
     projectDbRelativePath: ".agent-mem/mem.db",
     maxDigestTokens: 250,
     maxRecentSessionsInDigest: 3,
+    retentionDays: parseRetentionDays(process.env.AGENT_MEM_RETENTION_DAYS),
     secretPatterns: [
       /sk-ant-[a-zA-Z0-9_\-]{20,}/g,
       /sk-[a-zA-Z0-9]{30,}/g,

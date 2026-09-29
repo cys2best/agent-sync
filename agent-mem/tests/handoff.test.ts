@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { formatHandoff, parseEvents, readTranscriptTail, sessionStatus } from "../src/context/handoff";
+import { formatHandoff, grepSteps, loadHandoff, parseEvents, readTranscriptTail, sessionStatus, stepDetail, stepsBefore } from "../src/context/handoff";
 
 const lines = (rows: object[]) => rows.map((r) => JSON.stringify(r)).join("\n");
 const T = (s: number) => new Date(Date.parse("2026-09-28T10:00:00Z") + s * 1000).toISOString();
@@ -254,5 +254,82 @@ describe("readTranscriptTail", () => {
 
   it("returns an empty string for a missing file", () => {
     expect(readTranscriptTail(join(dir, "missing.jsonl"))).toBe("");
+  });
+});
+
+describe("drill-down by byte offset", () => {
+  const dir = join(import.meta.dir, "__drill_test__");
+  const session = { id: "ses1", agentType: "claude", startedAt: 0 };
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const write = (name: string, rows: object[]) => {
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, name);
+    writeFileSync(file, lines(rows));
+    return file;
+  };
+  const prompt = (text: string, t = 0) => ({ type: "user", timestamp: T(t), message: { content: text } });
+  const reply = (text: string, t = 0) => ({ type: "assistant", timestamp: T(t), message: { content: [{ type: "text", text }] } });
+  const bash = (command: string, t = 0) => ({ type: "assistant", timestamp: T(t), message: { content: [{ type: "tool_use", id: `b${t}`, name: "Bash", input: { command } }] } });
+
+  it("tags each event with the byte offset of its line", () => {
+    const rows = [prompt("héllo wörld prompt here"), reply("second line")];
+    const text = lines(rows);
+    const events = parseEvents(text, 100);
+    expect(events.map((e) => e.offset)).toEqual([100, 100 + Buffer.byteLength(JSON.stringify(rows[0])) + 1]);
+  });
+
+  it("finds the task prompt even when it is far before the tail", () => {
+    const filler = Array.from({ length: 50 }, (_, i) => bash(`echo ${"x".repeat(200)} ${i}`, i + 1));
+    const file = write("far.jsonl", [prompt("fix the wombat parser crash", 0), ...filler]);
+    const out = loadHandoff(session, file, Date.parse(T(9999)), { tailBytes: 2048, chunkBytes: 2048 });
+    expect(out).toContain("Task (last prompt): fix the wombat parser crash");
+    expect(out).toMatch(/Earlier steps: handoff ses1 --before @\d+/);
+  });
+
+  it("shows the original goal when the last prompt is a follow-up", () => {
+    const file = write("goal.jsonl", [prompt("build the numbat export feature end to end", 0), reply("done step one", 1), prompt("now fix the failing tests please", 2), reply("fixing", 3)]);
+    const out = loadHandoff(session, file, Date.parse(T(9999)));
+    expect(out).toContain("Original goal (first prompt): build the numbat export feature end to end");
+    expect(out).toContain("Task (last prompt): now fix the failing tests please");
+    const same = loadHandoff(session, write("same.jsonl", [prompt("build the numbat export feature end to end"), reply("ok", 1)]), Date.parse(T(9999)));
+    expect(same).not.toContain("Original goal");
+  });
+
+  it("marks clipped steps with the command that returns them in full", () => {
+    const long = "Review findings: " + Array.from({ length: 60 }, (_, i) => `issue${i}`).join(" ");
+    const file = write("clip.jsonl", [prompt("review the whole branch carefully"), reply(long, 1)]);
+    const out = loadHandoff(session, file, Date.parse(T(9999)));
+    const offset = Number(out.match(/--step @(\d+)/)?.[1]);
+    expect(Number.isNaN(offset)).toBe(false);
+    const full = stepDetail(file, offset);
+    expect(full).toContain("issue59");
+    expect(full).toContain("[reply]");
+  });
+
+  it("pages older steps before an offset, newest page last", () => {
+    const rows = [prompt("start the long job now please"), ...Array.from({ length: 30 }, (_, i) => bash(`step-${i}`, i + 1))];
+    const file = write("page.jsonl", rows);
+    const all = parseEvents(lines(rows));
+    const out = stepsBefore(file, all[25].offset!, 5);
+    expect(out).toContain("step-23");
+    expect(out).toContain("step-19");
+    expect(out).not.toContain("step-18");
+    expect(out).not.toContain("step-24");
+    expect(out).toMatch(/Earlier steps: --before @\d+/);
+  });
+
+  it("greps steps across the whole session, newest first", () => {
+    const rows = [prompt("investigate the platypus timeout issue"), bash("ls", 1), reply("platypus fixed in cache layer", 2), ...Array.from({ length: 30 }, (_, i) => bash(`noise-${"y".repeat(100)}-${i}`, i + 3))];
+    const file = write("grep.jsonl", rows);
+    const out = grepSteps(file, "PLATYPUS", 10, 1024);
+    expect(out.indexOf("platypus fixed")).toBeLessThan(out.indexOf("investigate the platypus"));
+    expect(out).toMatch(/@\d+ \[reply\] platypus fixed/);
+    expect(grepSteps(file, "nothing-matches-this")).toContain("No steps match");
+  });
+
+  it("reads a subagent result on its own, without the launching tool call", () => {
+    const row = { type: "user", timestamp: T(1), toolUseResult: { agentId: "a1" }, message: { content: [{ type: "tool_result", tool_use_id: "gone", content: [{ type: "text", text: "Reviewer report: all good" }] }] } };
+    expect(parseEvents(JSON.stringify(row))).toEqual([expect.objectContaining({ kind: "subagent", text: "Reviewer report: all good" })]);
   });
 });

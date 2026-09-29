@@ -22,6 +22,13 @@ The CLI talks to a local daemon on `127.0.0.1:3777`. In Codex, the default sandb
 
 2. **Load it.** Run `bun run "$AGENT_MEM" handoff <session-id>`. With no id, it picks the most recent interrupted session. The output is the handoff; keep it in context.
 
+   The handoff is a summary: long steps end with `[clipped N chars → handoff <id> --step @<offset>]`. Pull more only when the next step needs it:
+   - The step you continue from is clipped (review findings, a plan, a todo list): `handoff <id> --step @<offset>` for its full text.
+   - The task is vague ("continue", "do option B") or points at something earlier: `handoff <id> --grep "<text>"`, or page back with `handoff <id> --before @<offset>` (the handoff's `Earlier steps:` line gives the first one).
+   - You are about to redo expensive work (a review, an investigation): `--grep` for it first to check whether it already finished.
+
+   If the handoff already makes the next step clear, continue without drilling down.
+
 3. **Check what changed since.** Run `git status` and `git log --oneline -5`. If `.agent-sync/todo/` holds a todo list for this work (from the `.agent-sync/TDD.md` workflow), read it: unchecked items are what remains. The other agent may have committed or edited files after its last recorded step; trust the repository over the transcript when they disagree.
 
 4. **Continue, don't restart.** Resume from the last step in the handoff. Do not redo steps it shows as finished. For example, if a review's findings are listed and some fixes are already applied, apply the remaining fixes rather than re-running the whole review. If a workflow tool manages the task, use its own resume path and treat the handoff as the record of what the interrupted step already did.

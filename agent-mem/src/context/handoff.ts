@@ -1,7 +1,7 @@
 import { closeSync, existsSync, openSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { sanitizePayload } from "../privacy/redactor";
-import { isInjectedContext, isNoise, toTime, unwrapUserRequest } from "./transcript";
+import { extractEditedFiles, isInjectedContext, isNoise, toTime, unwrapUserRequest } from "./transcript";
 
 export type HandoffEventKind = "prompt" | "reply" | "tool" | "subagent" | "error";
 
@@ -9,6 +9,8 @@ export interface HandoffEvent {
   kind: HandoffEventKind;
   text: string;
   at: number;
+  /** Byte offset of the transcript line this event came from; lets the next agent fetch it again. */
+  offset?: number;
 }
 
 export interface SessionStatus {
@@ -75,7 +77,8 @@ function claudeEvents(row: Record<string, any>, subagentCalls: Set<string>): Han
   if (Array.isArray(content)) {
     const events: HandoffEvent[] = [];
     for (const block of content) {
-      if (block?.type === "tool_result" && subagentCalls.has(block.tool_use_id)) {
+      // toolUseResult.agentId marks subagent results even when the launching call is outside the loaded chunk
+      if (block?.type === "tool_result" && (subagentCalls.has(block.tool_use_id) || row.toolUseResult?.agentId)) {
         const text = blockText(block.content).trim();
         // Background agents answer later via task-notification; the launch receipt carries nothing
         if (text && !text.startsWith(ASYNC_LAUNCH_PREFIX)) events.push({ kind: "subagent", text, at });
@@ -170,10 +173,13 @@ function antigravityEvents(row: Record<string, any>): HandoffEvent[] {
 }
 
 /** Ordered prompt/reply/tool/subagent/error events from a Claude Code, Codex, or Antigravity transcript. */
-export function parseEvents(jsonl: string): HandoffEvent[] {
+export function parseEvents(jsonl: string, baseOffset: number = 0): HandoffEvent[] {
   const events: HandoffEvent[] = [];
   const subagentCalls = new Set<string>();
+  let offset = baseOffset;
   for (const line of jsonl.split("\n")) {
+    const lineOffset = offset;
+    offset += Buffer.byteLength(line) + 1;
     if (!line.trim()) continue;
     let row: Record<string, any>;
     try {
@@ -181,9 +187,9 @@ export function parseEvents(jsonl: string): HandoffEvent[] {
     } catch {
       continue;
     }
-    if ("step_index" in row) events.push(...antigravityEvents(row));
-    else if (row.type === "response_item" || row.type === "event_msg") events.push(...codexEvents(row));
-    else events.push(...claudeEvents(row, subagentCalls));
+    const found =
+      "step_index" in row ? antigravityEvents(row) : row.type === "response_item" || row.type === "event_msg" ? codexEvents(row) : claudeEvents(row, subagentCalls);
+    for (const event of found) events.push({ ...event, offset: lineOffset });
   }
   return events;
 }
@@ -217,18 +223,42 @@ function formatAge(ms: number): string {
 // Retries like "continue" or "go on" after a limit hit do not describe the task
 const MIN_TASK_WORDS = 4;
 
+function isTaskPrompt(event: HandoffEvent): boolean {
+  return event.kind === "prompt" && oneLine(event.text).split(" ").length >= MIN_TASK_WORDS;
+}
+
 function findTaskIndex(events: HandoffEvent[]): number {
   for (let i = events.length - 1; i >= 0; i--) {
-    if (events[i].kind === "prompt" && oneLine(events[i].text).split(" ").length >= MIN_TASK_WORDS) return i;
+    if (isTaskPrompt(events[i])) return i;
   }
   return -1;
+}
+
+/** One step line; a clipped step names the command that returns it in full. */
+function stepLine(event: HandoffEvent, sessionId: string | undefined, withOffset: boolean): string {
+  const max = TAIL_LIMITS[event.kind].chars;
+  const flat = oneLine(event.text);
+  const at = withOffset && event.offset !== undefined ? `@${event.offset} ` : "";
+  let line = `  - ${at}[${event.kind}] ${clip(flat, max)}`;
+  if (flat.length > max && event.offset !== undefined) {
+    line += ` [clipped ${flat.length} chars → ${sessionId ? `handoff ${sessionId} ` : ""}--step @${event.offset}]`;
+  }
+  return line;
+}
+
+export interface HandoffContext {
+  /** Task prompt found before the loaded events, when none of them states one. */
+  task?: HandoffEvent;
+  /** First real prompt of the session. */
+  goal?: HandoffEvent;
 }
 
 export function formatHandoff(
   session: { id: string; agentType: string; startedAt: number },
   events: HandoffEvent[],
   editedFiles: string[],
-  now: number = Date.now()
+  now: number = Date.now(),
+  context: HandoffContext = {}
 ): string {
   const status = sessionStatus(events, now);
   const taskIndex = findTaskIndex(events);
@@ -248,16 +278,21 @@ export function formatHandoff(
     `=== AGENT-MEM HANDOFF: ${session.agentType} session ${session.id} ===`,
     `Status: ${statusText}${status.lastEventAt ? `, last activity ${formatAge(now - status.lastEventAt)}` : ""}`,
   ];
-  lines.push(`Task (last prompt): ${taskIndex >= 0 ? clip(events[taskIndex].text, 300) : "not in the loaded transcript tail"}`);
+  const task = taskIndex >= 0 ? events[taskIndex] : context.task;
+  const goal = context.goal;
+  if (goal && (!task || goal.offset !== task.offset || goal.text !== task.text)) {
+    lines.push(`Original goal (first prompt): ${clip(goal.text, 300)}`);
+  }
+  lines.push(`Task (last prompt): ${task ? clip(task.text, 300) : "not in the loaded transcript tail"}`);
   if (editedFiles.length > 0) {
     const extra = editedFiles.length - 10;
     lines.push(`Files changed: ${editedFiles.slice(0, 10).join(", ")}${extra > 0 ? ` +${extra}` : ""}`);
   }
   lines.push("Last steps (oldest → newest):");
   if (tail.length === 0) lines.push("  (none recorded after the last prompt)");
-  for (const event of tail) {
-    lines.push(`  - [${event.kind}] ${clip(event.text, TAIL_LIMITS[event.kind].chars)}`);
-  }
+  for (const event of tail) lines.push(stepLine(event, session.id, false));
+  const earliest = tail[0]?.offset ?? task?.offset;
+  if (earliest) lines.push(`Earlier steps: handoff ${session.id} --before @${earliest}`);
   lines.push(
     "Resume from the last step above; do not redo steps it shows as finished. Check `git status` and `git log` first, since files may have changed after this transcript."
   );
@@ -265,20 +300,135 @@ export function formatHandoff(
   return sanitizePayload(lines.join("\n")).sanitized;
 }
 
-/** Last `maxBytes` of a transcript, trimmed to whole lines, so huge sessions stay cheap to read. */
-export function readTranscriptTail(path: string, maxBytes: number = 512 * 1024): string {
-  if (!existsSync(path)) return "";
-  const size = statSync(path).size;
-  const start = Math.max(0, size - maxBytes);
-  const buffer = Buffer.alloc(size - start);
+function readBytes(path: string, start: number, length: number): Buffer {
+  const buffer = Buffer.alloc(length);
   const fd = openSync(path, "r");
   try {
-    readSync(fd, buffer, 0, buffer.length, start);
+    readSync(fd, buffer, 0, length, start);
   } finally {
     closeSync(fd);
   }
-  const text = buffer.toString("utf-8");
-  return start === 0 ? text : text.slice(text.indexOf("\n") + 1);
+  return buffer;
+}
+
+/** Whole lines in the `maxBytes` before byte `end` (a line start), with the byte offset they begin at. */
+export function readTranscriptChunk(path: string, end: number, maxBytes: number): { text: string; start: number } {
+  const start = Math.max(0, end - maxBytes);
+  const buffer = readBytes(path, start, end - start);
+  if (start === 0) return { text: buffer.toString("utf-8"), start };
+  // Drop the partial first line; a line longer than the chunk yields nothing
+  const newline = buffer.indexOf(0x0a);
+  if (newline === -1) return { text: "", start: end };
+  return { text: buffer.subarray(newline + 1).toString("utf-8"), start: start + newline + 1 };
+}
+
+/** Last `maxBytes` of a transcript, trimmed to whole lines, so huge sessions stay cheap to read. */
+export function readTranscriptTail(path: string, maxBytes: number = 512 * 1024): string {
+  if (!existsSync(path)) return "";
+  return readTranscriptChunk(path, statSync(path).size, maxBytes).text;
+}
+
+/**
+ * Walk the transcript backwards chunk by chunk from byte `end`, handing each chunk's events to `visit`
+ * until it returns true or the file start is reached, so large sessions are never read whole.
+ */
+function walkBackwards(path: string, end: number, chunkBytes: number, visit: (events: HandoffEvent[]) => boolean): void {
+  while (end > 0) {
+    const chunk = readTranscriptChunk(path, end, chunkBytes);
+    // A single line bigger than the chunk: widen until it fits
+    if (chunk.start === end) {
+      chunkBytes *= 2;
+      continue;
+    }
+    if (visit(parseEvents(chunk.text, chunk.start))) return;
+    end = chunk.start;
+  }
+}
+
+const HEAD_BYTES = 64 * 1024;
+const CHUNK_BYTES = 512 * 1024;
+
+/** First real prompt in the opening bytes of a transcript. */
+function findGoal(path: string): HandoffEvent | undefined {
+  const size = statSync(path).size;
+  const text = readBytes(path, 0, Math.min(size, HEAD_BYTES)).toString("utf-8");
+  // Drop a partial last line
+  const whole = size > HEAD_BYTES ? text.slice(0, text.lastIndexOf("\n") + 1) : text;
+  return parseEvents(whole).find(isTaskPrompt);
+}
+
+/** Handoff for a transcript on disk: tail steps, the task prompt wherever it is, and the original goal. */
+export function loadHandoff(
+  session: { id: string; agentType: string; startedAt: number },
+  path: string,
+  now: number = Date.now(),
+  opts: { tailBytes?: number; chunkBytes?: number } = {}
+): string {
+  const size = statSync(path).size;
+  const tail = readTranscriptChunk(path, size, opts.tailBytes ?? CHUNK_BYTES);
+  const events = parseEvents(tail.text, tail.start);
+  const context: HandoffContext = { goal: findGoal(path) };
+  if (findTaskIndex(events) < 0) {
+    walkBackwards(path, tail.start, opts.chunkBytes ?? CHUNK_BYTES, (chunk) => {
+      const i = findTaskIndex(chunk);
+      if (i >= 0) context.task = chunk[i];
+      return i >= 0;
+    });
+  }
+  return formatHandoff(session, events, extractEditedFiles(tail.text), now, context);
+}
+
+const MAX_STEP_CHARS = 20000;
+
+/** Full text of the events on the transcript line starting at byte `offset`. */
+export function stepDetail(path: string, offset: number): string {
+  const size = statSync(path).size;
+  if (!Number.isInteger(offset) || offset < 0 || offset >= size) return `No step at @${offset}; the transcript is ${size} bytes.`;
+  let length = Math.min(size - offset, 64 * 1024);
+  let buffer = readBytes(path, offset, length);
+  while (buffer.indexOf(0x0a) === -1 && offset + length < size) {
+    length = Math.min(size - offset, length * 4);
+    buffer = readBytes(path, offset, length);
+  }
+  const newline = buffer.indexOf(0x0a);
+  const line = (newline === -1 ? buffer : buffer.subarray(0, newline)).toString("utf-8");
+  const events = parseEvents(line, offset);
+  if (events.length === 0) return `No prompt, reply, tool call, or subagent result at @${offset}.`;
+  const text = events
+    .map((e) => {
+      const body = e.text.length > MAX_STEP_CHARS ? `${e.text.slice(0, MAX_STEP_CHARS)}\n[truncated at ${MAX_STEP_CHARS} of ${e.text.length} chars]` : e.text;
+      return `=== @${offset} [${e.kind}] ${new Date(e.at).toISOString()} ===\n${body}`;
+    })
+    .join("\n\n");
+  return sanitizePayload(text).sanitized;
+}
+
+/** The `count` steps before byte `offset`, oldest first, with a pointer to the page before them. */
+export function stepsBefore(path: string, offset: number, count: number = 20, chunkBytes: number = CHUNK_BYTES): string {
+  let found: HandoffEvent[] = [];
+  walkBackwards(path, Math.min(offset, statSync(path).size), chunkBytes, (chunk) => {
+    found = [...chunk, ...found];
+    return found.length >= count;
+  });
+  const page = found.slice(-count);
+  if (page.length === 0) return `No steps before @${offset}.`;
+  const lines = page.map((e) => stepLine(e, undefined, true));
+  if (page[0].offset) lines.push(`Earlier steps: --before @${page[0].offset}`);
+  return sanitizePayload(lines.join("\n")).sanitized;
+}
+
+/** Steps whose text contains `query` (case-insensitive), newest first. */
+export function grepSteps(path: string, query: string, limit: number = 10, chunkBytes: number = CHUNK_BYTES): string {
+  const needle = query.toLowerCase();
+  const hits: HandoffEvent[] = [];
+  walkBackwards(path, statSync(path).size, chunkBytes, (chunk) => {
+    for (let i = chunk.length - 1; i >= 0 && hits.length < limit; i--) {
+      if (chunk[i].text.toLowerCase().includes(needle)) hits.push(chunk[i]);
+    }
+    return hits.length >= limit;
+  });
+  if (hits.length === 0) return `No steps match '${query}'.`;
+  return sanitizePayload(hits.map((e) => stepLine(e, undefined, true)).join("\n")).sanitized;
 }
 
 /** Antigravity truncates long fields in transcript.jsonl; transcript_full.jsonl keeps them intact. */

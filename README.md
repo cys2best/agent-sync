@@ -201,7 +201,10 @@ session in a project stopped early, the startup summary says so:
 
 The same data is available from the CLI: `agent-mem sessions` lists recent
 sessions with how each ended, and `agent-mem handoff [session-id]` prints one
-(default: the latest interrupted session).
+(default: the latest interrupted session). The handoff is a summary; clipped
+steps carry a byte offset, and `handoff <id> --step @<offset>`,
+`--before @<offset>`, or `--grep <text>` fetch more without reading the whole
+transcript.
 
 The injected digest is capped at about 250 tokens (`maxDigestTokens` in
 `agent-mem/src/config.ts`): the three most recent sessions plus as many recent

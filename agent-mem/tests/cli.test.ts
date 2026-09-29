@@ -393,6 +393,8 @@ describe("CLI entry point", () => {
       expect(handoff).toContain("Reviewer found 2 issues; fixing issue 1.");
       expect(handoff).toContain("Files changed: /repo/q.ts");
       expect(await run(["handoff", "claude-limited-cli"])).toContain("rate_limit");
+      expect(await run(["handoff", "claude-limited-cli", "--step", "@0"])).toContain("final review of numbatqueue branch");
+      expect(await run(["handoff", "claude-limited-cli", "--grep", "reviewer"])).toContain("Reviewer found 2 issues");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

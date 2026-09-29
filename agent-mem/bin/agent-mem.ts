@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { createMemoryServer } from "../src/daemon/server";
 import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
-import { formatHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus } from "../src/context/handoff";
+import { grepSteps, loadHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus, stepDetail, stepsBefore } from "../src/context/handoff";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { installAntigravityHooks, installCodexHooks } from "../src/install/hooks";
@@ -24,6 +24,9 @@ Commands:
   get <observation-id>           Retrieve exact content of an observation
   sessions [--limit <n>]         List recent sessions from all agents with their stop status
   handoff [<session-id>]         Print where a session stopped (default: latest interrupted one)
+    --step @<offset>             Full text of one step (offsets come from the handoff output)
+    --before @<offset>           The 20 steps before that offset
+    --grep <text>                Steps in that session containing the text, newest first
   digest                         Output the compact startup digest for this project
   setup [--agent <type>]         Install hooks for an agent (antigravity, claude, codex)
   install [--agent <name>]       Install or upgrade agent-sync skills and hooks for every detected agent
@@ -347,8 +350,13 @@ if (command === "daemon") {
     } else if (!pick.tail) {
       console.log(`Session ${pick.session.id} has no readable transcript, so there is nothing to hand off.`);
     } else {
-      const tail = readTranscriptTail(resolveTranscriptSource(pick.session.transcriptPath));
-      console.log(formatHandoff(pick.session, parseEvents(tail), extractEditedFiles(tail), now));
+      const source = resolveTranscriptSource(pick.session.transcriptPath);
+      const offsetArg = (flag: string) => Number((getArgValue(flag) ?? "").replace(/^@/, ""));
+      const grep = getArgValue("--grep");
+      if (getArgValue("--step")) console.log(stepDetail(source, offsetArg("--step")));
+      else if (getArgValue("--before")) console.log(stepsBefore(source, offsetArg("--before")));
+      else if (grep) console.log(grepSteps(source, grep));
+      else console.log(loadHandoff(pick.session, source, now));
     }
   }
 } else if (command === "search") {

@@ -121,5 +121,24 @@ class TestPluginManifest(unittest.TestCase):
                     f"{skill_md} frontmatter must declare its name as {item}",
                 )
 
+    def test_codex_plugin_manifests(self):
+        with open(os.path.join(self.repo_root, ".codex-plugin", "plugin.json"), encoding="utf-8") as f:
+            codex = json.load(f)
+        with open(self.plugin_json_path, encoding="utf-8") as f:
+            root = json.load(f)
+        self.assertEqual(codex["name"], "agent-sync")
+        self.assertEqual(codex["version"], root["version"])
+        self.assertEqual(codex["skills"], "./skills/")
+        with open(os.path.join(self.repo_root, ".agents", "plugins", "marketplace.json"), encoding="utf-8") as f:
+            market = json.load(f)
+        self.assertEqual(market["name"], "agent-sync")
+        self.assertEqual([p["name"] for p in market["plugins"]], ["agent-sync"])
+        self.assertEqual(market["plugins"][0]["source"], {"source": "url", "url": "./"})
+
+    def test_version_bump_covers_codex_manifest(self):
+        with open(os.path.join(self.repo_root, ".version-bump.json"), encoding="utf-8") as f:
+            paths = [entry["path"] for entry in json.load(f)["files"]]
+        self.assertIn(".codex-plugin/plugin.json", paths)
+
 if __name__ == "__main__":
     unittest.main()

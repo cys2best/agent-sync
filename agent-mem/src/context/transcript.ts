@@ -6,13 +6,13 @@ export interface ChatMessage {
   createdAt: number;
 }
 
-function toTime(value: unknown): number {
+export function toTime(value: unknown): number {
   const t = typeof value === "string" ? Date.parse(value) : NaN;
   return Number.isNaN(t) ? Date.now() : t;
 }
 
 /** Antigravity wraps the typed prompt in <USER_REQUEST> alongside metadata blocks. */
-function unwrapUserRequest(content: string): string {
+export function unwrapUserRequest(content: string): string {
   const match = content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
   return (match ? match[1] : content).trim();
 }
@@ -26,12 +26,12 @@ function fromAntigravity(row: Record<string, any>): ChatMessage | null {
 }
 
 /** Codex rollouts inject AGENTS.md and environment blocks as user messages; only typed prompts count. */
-function isInjectedContext(text: string): boolean {
+export function isInjectedContext(text: string): boolean {
   return text.startsWith("<") || text.startsWith("# AGENTS.md instructions");
 }
 
 /** Interrupt markers carry no meaning for later sessions. */
-function isNoise(text: string): boolean {
+export function isNoise(text: string): boolean {
   return /^\[Request interrupted by user[^\]]*\]$/.test(text);
 }
 
@@ -83,9 +83,10 @@ export function parseTranscript(jsonl: string): ChatMessage[] {
 }
 
 const CLAUDE_EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const ANTIGRAVITY_EDIT_TOOLS = new Set(["replace_file_content", "multi_replace_file_content", "write_to_file"]);
 const PATCH_FILE_RE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
 
-/** Files changed during the session: Claude Code edit tools and Codex apply_patch bodies, first-seen order. */
+/** Files changed during the session: Claude Code and Antigravity edit tools, Codex apply_patch bodies; first-seen order. */
 export function extractEditedFiles(jsonl: string): string[] {
   const files = new Set<string>();
   for (const line of jsonl.split("\n")) {
@@ -97,7 +98,12 @@ export function extractEditedFiles(jsonl: string): string[] {
       continue;
     }
 
-    if (row.type === "assistant" && Array.isArray(row.message?.content)) {
+    if (row.type === "PLANNER_RESPONSE" && Array.isArray(row.tool_calls)) {
+      for (const call of row.tool_calls) {
+        const path = call?.args?.TargetFile;
+        if (ANTIGRAVITY_EDIT_TOOLS.has(call?.name) && typeof path === "string") files.add(path);
+      }
+    } else if (row.type === "assistant" && Array.isArray(row.message?.content)) {
       for (const block of row.message.content) {
         if (block?.type !== "tool_use" || !CLAUDE_EDIT_TOOLS.has(block.name)) continue;
         const path = block.input?.file_path ?? block.input?.notebook_path;

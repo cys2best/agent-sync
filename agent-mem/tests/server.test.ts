@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { createMemoryServer } from "../src/daemon/server";
 import { ensureDaemonRunning, isDaemonRunning, stopDaemon } from "../src/daemon/lifecycle";
 import type { Server } from "bun";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 describe("memory daemon HTTP server", () => {
   let server: Server;
@@ -90,6 +92,48 @@ describe("memory daemon HTTP server", () => {
 
     const digest = ((await (await fetch(`${baseUrl}/api/digest?project=proj_summary`)).json()) as any).digest;
     expect(digest).toContain("[agent-ses-2] (codex, just now): fix the login bug · edited guard.ts");
+  });
+
+  it("lists sessions with transcript paths and warns the next session about an interrupted one", async () => {
+    const dir = join(import.meta.dir, "__notice_test__");
+    mkdirSync(dir, { recursive: true });
+    const transcriptPath = join(dir, "claude.jsonl");
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: "user", uuid: "u1", timestamp: old, message: { content: "final review" } },
+        {
+          type: "assistant",
+          uuid: "a1",
+          timestamp: old,
+          isApiErrorMessage: true,
+          error: "rate_limit",
+          message: { content: [{ type: "text", text: "You've hit your session limit" }] },
+        },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n")
+    );
+    const start = (sessionId: string, agentType: string, path?: string) =>
+      fetch(`${baseUrl}/api/hook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "session-start", sessionId, projectId: "proj_notice", agentType, transcriptPath: path }),
+      }).then((r) => r.json() as Promise<any>);
+
+    try {
+      await start("claude-limited", "claude", transcriptPath);
+      const listed = (await (await fetch(`${baseUrl}/api/sessions?project=proj_notice`)).json()) as any;
+      expect(listed.sessions[0]).toMatchObject({ id: "claude-limited", agentType: "claude", transcriptPath });
+
+      const next = await start("codex-next", "codex");
+      expect(next.digest).toContain("⚠ claude session claude-limited stopped: rate_limit");
+      expect(next.digest).toContain("/agent-sync:resume");
+      expect(next.summary).toContain("⚠ claude session claude-limited stopped");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("handles /api/hook post-tool with private tag sanitization", async () => {

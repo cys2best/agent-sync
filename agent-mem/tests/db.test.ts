@@ -110,6 +110,27 @@ describe("database operations", () => {
     expect(sessions[0].status).toBe("completed");
   });
 
+  it("stores a session transcript path and keeps it across updates", () => {
+    upsertProject(db, { id: "proj_1", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "ses_t", projectId: "proj_1", agentType: "claude", startedAt: 1, status: "active", transcriptPath: "/t/a.jsonl" });
+    updateSession(db, "ses_t", { summary: "s" });
+    expect(getRecentSessions(db, "proj_1")[0].transcriptPath).toBe("/t/a.jsonl");
+
+    updateSession(db, "ses_t", { transcriptPath: "/t/b.jsonl" });
+    expect(getRecentSessions(db, "proj_1")[0].transcriptPath).toBe("/t/b.jsonl");
+  });
+
+  it("adds the transcript_path column to databases created before it existed", () => {
+    const old = new Database(":memory:");
+    old.exec(`CREATE TABLE sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, agent_type TEXT NOT NULL,
+      title TEXT, summary TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, status TEXT NOT NULL DEFAULT 'active')`);
+    initializeSchema(old);
+    initializeSchema(old);
+    const columns = (old.prepare("PRAGMA table_info(sessions)").all() as any[]).map((c) => c.name);
+    expect(columns).toContain("transcript_path");
+    old.close();
+  });
+
   it("retrieves recent observations ordered by createdAt DESC", () => {
     upsertProject(db, { id: "proj_1", name: "test-proj", rootPath: "/test/path" });
     insertSession(db, {

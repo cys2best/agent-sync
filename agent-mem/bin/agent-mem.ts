@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createMemoryServer } from "../src/daemon/server";
 import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
+import { formatHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus } from "../src/context/handoff";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -19,6 +20,8 @@ Commands:
   hook <event> [options]         Trigger a lifecycle hook (session-start, post-tool, transcript, session-end)
   search <query> [--limit <n>]   Search project memory using SQLite FTS5
   get <observation-id>           Retrieve exact content of an observation
+  sessions [--limit <n>]         List recent sessions from all agents with their stop status
+  handoff [<session-id>]         Print where a session stopped (default: latest interrupted one)
   digest                         Output the compact startup digest for this project
   setup [--agent <type>]         Install hooks for an agent (antigravity, claude, codex)
   help                           Show this help message
@@ -96,6 +99,7 @@ if (command === "daemon") {
 
   // Antigravity sends conversationId; Claude Code and Codex send session_id
   const agentSessionId: string | undefined = stdinData.conversationId || stdinData.session_id;
+  const stdinTranscriptPath: string | undefined = stdinData.transcriptPath || stdinData.transcript_path || undefined;
   const agentType = getArgValue("--agent") || (stdinData.conversationId ? "antigravity" : process.env.AGENT_TYPE || "claude");
 
   if (event === "session-start") {
@@ -105,6 +109,7 @@ if (command === "daemon") {
       body: JSON.stringify({
         event: "session-start",
         sessionId: agentSessionId,
+        transcriptPath: stdinTranscriptPath,
         projectId,
         projectName,
         agentType,
@@ -118,9 +123,9 @@ if (command === "daemon") {
     const data = (await res.json()) as any;
 
     if (outputFormat === "antigravity") {
-      // Antigravity PreInvocation contract: output JSON with injectSteps
+      // PreInvocation fires before every model call; inject only on the conversation's first one
       const output = {
-        injectSteps: [{ ephemeralMessage: data.digest }],
+        injectSteps: data.isNew === false ? [] : [{ ephemeralMessage: data.digest }],
       };
       console.log(JSON.stringify(output));
     } else if (outputFormat === "claude" || outputFormat === "codex") {
@@ -182,7 +187,7 @@ if (command === "daemon") {
     }
 
     const sessionIndex = args.indexOf("--session");
-    const sessionId = dataObj.sessionId || (sessionIndex !== -1 ? args[sessionIndex + 1] : undefined);
+    const sessionId = dataObj.sessionId || (sessionIndex !== -1 ? args[sessionIndex + 1] : undefined) || agentSessionId;
 
     const res = await fetch(`${serverUrl}/api/hook`, {
       method: "POST",
@@ -190,7 +195,9 @@ if (command === "daemon") {
       body: JSON.stringify({
         event: "post-tool",
         projectId,
+        projectName,
         sessionId,
+        agentType,
         toolName,
         summary,
         content,
@@ -211,15 +218,13 @@ if (command === "daemon") {
     }
   } else if (event === "transcript") {
     // Stop hook: Antigravity sends transcriptPath/conversationId, Claude Code sends transcript_path/session_id
-    const transcriptPath: string | undefined = stdinData.transcriptPath || stdinData.transcript_path;
+    const transcriptPath = stdinTranscriptPath;
     const sessionId = agentSessionId || dataObj.sessionId;
 
     let messages: ReturnType<typeof parseTranscript> = [];
     let editedFiles: string[] = [];
     if (transcriptPath) {
-      // Antigravity truncates long fields in transcript.jsonl; transcript_full.jsonl keeps them intact
-      const fullPath = join(dirname(transcriptPath), "transcript_full.jsonl");
-      const source = transcriptPath.endsWith("/transcript.jsonl") && existsSync(fullPath) ? fullPath : transcriptPath;
+      const source = resolveTranscriptSource(transcriptPath);
       if (existsSync(source)) {
         const jsonl = readFileSync(source, "utf-8");
         messages = parseTranscript(jsonl);
@@ -238,6 +243,7 @@ if (command === "daemon") {
           projectName,
           sessionId,
           agentType,
+          transcriptPath,
           summary: summarizeSession(messages, editedFiles),
           messages,
         }),
@@ -296,6 +302,47 @@ if (command === "daemon") {
       process.exit(1);
     }
     const data = (await res.json()) as any;
+  }
+} else if (command === "sessions" || command === "handoff") {
+  const projectId = getProjectId(getArgValue("--project") || process.cwd());
+  const serverUrl = await ensureDaemonRunning();
+  const res = await fetch(`${serverUrl}/api/sessions?project=${projectId}&limit=${getArgValue("--limit") || "20"}`);
+  if (!res.ok) {
+    console.error(`Request failed (${res.status}): ${await res.text()}`);
+    process.exit(1);
+  }
+  const sessions = (((await res.json()) as any).sessions || []) as any[];
+  const now = Date.now();
+  const withStatus = sessions.map((session) => {
+    // A small tail is enough to tell how the session ended; the full tail is read only for the one handed off
+    const tail = session.transcriptPath ? readTranscriptTail(resolveTranscriptSource(session.transcriptPath), 64 * 1024) : "";
+    return { session, tail, status: sessionStatus(parseEvents(tail), now) };
+  });
+
+  if (command === "sessions") {
+    if (withStatus.length === 0) console.log("No sessions recorded for this project yet.");
+    withStatus.forEach(({ session, status }, i) => {
+      const age = Math.round((now - (status.lastEventAt ?? session.startedAt)) / 60000);
+      const label = status.state === "interrupted" ? `interrupted (${status.reason})` : status.state;
+      console.log(`${i + 1}. ${session.id}  ${session.agentType}  ${age}m ago  ${label}  ${session.summary || session.title || ""}`.trimEnd());
+    });
+  } else {
+    const wanted = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
+    const pick = wanted
+      ? withStatus.find(({ session }) => session.id === wanted || session.id.startsWith(wanted))
+      : withStatus.find(({ status }) => status.state === "interrupted" || status.state === "mid-turn");
+    if (!pick) {
+      console.log(
+        wanted
+          ? `Session '${wanted}' not found in this project. Run \`agent-mem sessions\` to list them.`
+          : "No interrupted session found. Run `agent-mem sessions` and pass an id to load one anyway."
+      );
+    } else if (!pick.tail) {
+      console.log(`Session ${pick.session.id} has no readable transcript, so there is nothing to hand off.`);
+    } else {
+      const tail = readTranscriptTail(resolveTranscriptSource(pick.session.transcriptPath));
+      console.log(formatHandoff(pick.session, parseEvents(tail), extractEditedFiles(tail), now));
+    }
   }
 } else if (command === "search") {
   const projectIndex = args.indexOf("--project");

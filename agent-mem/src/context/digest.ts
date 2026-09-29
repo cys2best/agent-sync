@@ -31,7 +31,8 @@ export function generateCompactDigest(
   db: Database,
   projectId: string,
   projectName: string,
-  webViewerUrl: string = "http://localhost:3777"
+  webViewerUrl: string = "http://localhost:3777",
+  notices: string[] = []
 ): string {
   const config = getConfig();
   const sessions = getRecentSessions(db, projectId, config.maxRecentSessionsInDigest);
@@ -41,6 +42,7 @@ export function generateCompactDigest(
   const head: string[] = [];
   head.push("=== AGENT-MEM: PROJECT MEMORY ===");
   head.push(`Project: ${projectName} | Live Viewer: ${base}/p/${projectId}`);
+  head.push(...notices);
 
   if (sessions.length === 0) {
     head.push("Recent Activity: No past recorded sessions yet. This session is the first recorded.");
@@ -86,11 +88,12 @@ export function generateUserSummary(
   db: Database,
   projectId: string,
   projectName: string,
-  webViewerUrl: string = "http://localhost:3777"
+  webViewerUrl: string = "http://localhost:3777",
+  notices: string[] = []
 ): string {
   const totals = getProjectTotals(db, projectId);
   const base = webViewerUrl.replace(/\/+$/, "");
-  const lines: string[] = [`agent-mem · ${projectName}`];
+  const lines: string[] = [`agent-mem · ${projectName}`, ...notices];
 
   if (totals.observations === 0 || totals.lastObservationAt === null) {
     lines.push("No memory yet. This session will seed it; later sessions get recent context injected automatically.");

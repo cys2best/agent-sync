@@ -18,7 +18,8 @@ export function initializeSchema(db: Database): void {
       summary TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER,
-      status TEXT NOT NULL DEFAULT 'active'
+      status TEXT NOT NULL DEFAULT 'active',
+      transcript_path TEXT
     );
 
     CREATE TABLE IF NOT EXISTS events (
@@ -62,4 +63,10 @@ export function initializeSchema(db: Database): void {
       DELETE FROM observations_fts WHERE id = old.id;
     END;
   `);
+
+  // Databases created before transcript_path existed need the column added in place
+  const sessionColumns = (db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).map((c) => c.name);
+  if (!sessionColumns.includes("transcript_path")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN transcript_path TEXT");
+  }
 }

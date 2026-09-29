@@ -128,6 +128,15 @@ describe("extractEditedFiles", () => {
     expect(extractEditedFiles(text)).toEqual(["/repo/src/auth/guard.ts", "/repo/src/token.ts", "/repo/nb.ipynb"]);
   });
 
+  it("collects file paths from Antigravity write and replace tools", () => {
+    const text = lines([
+      { step_index: 1, type: "PLANNER_RESPONSE", tool_calls: [{ name: "view_file", args: { AbsolutePath: "/repo/README.md" } }] },
+      { step_index: 2, type: "PLANNER_RESPONSE", tool_calls: [{ name: "replace_file_content", args: { TargetFile: "/repo/src/a.ts" } }] },
+      { step_index: 3, type: "PLANNER_RESPONSE", tool_calls: [{ name: "write_to_file", args: { TargetFile: "/repo/src/b.ts" } }] },
+    ]);
+    expect(extractEditedFiles(text)).toEqual(["/repo/src/a.ts", "/repo/src/b.ts"]);
+  });
+
   it("collects file paths from Codex apply_patch calls", () => {
     const patch = "*** Begin Patch\n*** Update File: src/auth/guard.ts\n@@\n-a\n+b\n*** Add File: src/token.ts\n+x\n*** End Patch";
     const text = lines([

@@ -295,6 +295,80 @@ describe("CLI entry point", () => {
     }
   });
 
+  it("sessions lists interrupted sessions and handoff prints where one stopped", async () => {
+    const dir = join(import.meta.dir, "__handoff_cli_test__");
+    mkdirSync(dir, { recursive: true });
+    const transcriptPath = join(dir, "claude.jsonl");
+    const old = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: "user", uuid: "u1", timestamp: old, message: { content: "final review of numbatqueue branch" } },
+        { type: "assistant", uuid: "a1", timestamp: old, message: { content: [{ type: "text", text: "Reviewer found 2 issues; fixing issue 1." }] } },
+        { type: "assistant", uuid: "a2", timestamp: old, message: { content: [{ type: "tool_use", id: "e1", name: "Edit", input: { file_path: "/repo/q.ts" } }] } },
+        {
+          type: "assistant",
+          uuid: "a3",
+          timestamp: old,
+          isApiErrorMessage: true,
+          error: "rate_limit",
+          message: { content: [{ type: "text", text: "You've hit your session limit" }] },
+        },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n")
+    );
+    const env = { ...process.env, AGENT_MEM_PORT: testPort.toString() };
+    const run = async (argv: string[], stdin?: object) => {
+      const proc = Bun.spawn(["bun", "run", cliPath, ...argv], {
+        cwd: dir,
+        stdin: stdin ? new Blob([JSON.stringify(stdin)]) : undefined,
+        stdout: "pipe",
+        stderr: "pipe",
+        env,
+      });
+      const out = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      return out;
+    };
+
+    try {
+      await run(["hook", "session-start"], { session_id: "claude-limited-cli", cwd: dir, transcript_path: transcriptPath });
+      await run(["hook", "session-start", "--agent", "codex"], { session_id: "codex-now", cwd: dir });
+
+      const list = await run(["sessions"]);
+      expect(list).toMatch(/claude-limited-cli .*claude.*interrupted/);
+
+      // With no id, handoff picks the most recent interrupted session
+      const handoff = await run(["handoff"]);
+      expect(handoff).toContain("=== AGENT-MEM HANDOFF: claude session claude-limited-cli ===");
+      expect(handoff).toContain("Task (last prompt): final review of numbatqueue branch");
+      expect(handoff).toContain("Reviewer found 2 issues; fixing issue 1.");
+      expect(handoff).toContain("Files changed: /repo/q.ts");
+      expect(await run(["handoff", "claude-limited-cli"])).toContain("rate_limit");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("handoff explains when there is nothing to resume", async () => {
+    const dir = join(import.meta.dir, "__handoff_empty_test__");
+    mkdirSync(dir, { recursive: true });
+    try {
+      const proc = Bun.spawn(["bun", "run", cliPath, "handoff"], {
+        cwd: dir,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const out = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      expect(out).toContain("No interrupted session found");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("executes search command and formats results", async () => {
     const proc = Bun.spawn(["bun", "run", cliPath, "search", "auth token"], {
       stdout: "pipe",
@@ -431,6 +505,43 @@ describe("CLI entry point", () => {
     expect(parsed.systemMessage).toContain("agent-mem · ");
     expect(parsed.hookSpecificOutput.hookEventName).toBe("SessionStart");
     expect(parsed.hookSpecificOutput.additionalContext).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
+  });
+
+  it("injects the Antigravity digest once per conversation and links tool observations to it", async () => {
+    const env = { ...process.env, AGENT_MEM_PORT: testPort.toString() };
+    const hook = async (argv: string[], payload: object) => {
+      const proc = Bun.spawn(["bun", "run", cliPath, "hook", ...argv, "--output-format", "antigravity"], {
+        stdin: new Blob([JSON.stringify(payload)]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env,
+      });
+      const out = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+      return JSON.parse(out.trim());
+    };
+    const common = {
+      conversationId: "agy-conv-once",
+      workspacePaths: [process.cwd()],
+      transcriptPath: "/tmp/agy/transcript.jsonl",
+    };
+
+    const first = await hook(["session-start"], { ...common, invocationNum: 0, initialNumSteps: 0 });
+    expect(first.injectSteps[0].ephemeralMessage).toContain("=== AGENT-MEM: PROJECT MEMORY ===");
+
+    const second = await hook(["session-start"], { ...common, invocationNum: 1, initialNumSteps: 4 });
+    expect(second).toEqual({ injectSteps: [] });
+
+    await hook(["post-tool"], { ...common, toolCall: { name: "run_command", args: { CommandLine: "echo kiwiprobe" } }, stepIdx: 5 });
+    const results = ((await (await fetch(`http://127.0.0.1:${testPort}/api/search?q=kiwiprobe`)).json()) as any).results;
+    expect(results).toHaveLength(1);
+    expect(results[0].sessionId).toBe("agy-conv-once");
+
+    const sessions = ((await (await fetch(`http://127.0.0.1:${testPort}/api/sessions?project=${results[0].projectId}`)).json()) as any).sessions;
+    expect(sessions.find((s: any) => s.id === "agy-conv-once")).toMatchObject({
+      agentType: "antigravity",
+      transcriptPath: "/tmp/agy/transcript.jsonl",
+    });
   });
 
   it("shows setup in help text", async () => {

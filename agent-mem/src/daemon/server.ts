@@ -3,6 +3,7 @@ import { openDatabase } from "../db/client";
 import {
   getObservationById,
   getRecentObservations,
+  getRecentSessions,
   getStats,
   insertObservation,
   insertSession,
@@ -12,6 +13,7 @@ import {
 } from "../db/queries";
 import { sanitizePayload } from "../privacy/redactor";
 import { estimateTokenCount, generateCompactDigest, generateUserSummary } from "../context/digest";
+import { interruptionNotice } from "../context/handoff";
 import { SSEHub, getWebUiHtml } from "./sse";
 import { getConfig } from "../config";
 
@@ -97,8 +99,9 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
             rootPath: body.rootPath || process.cwd(),
           });
           // Agents resend the same session id on resume/compact; reopen it instead of inserting a duplicate
-          if (db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId)) {
-            updateSession(db, sessionId, { status: "active" });
+          const isNew = !db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId);
+          if (!isNew) {
+            updateSession(db, sessionId, { status: "active", transcriptPath: body.transcriptPath });
           } else {
             insertSession(db, {
               id: sessionId,
@@ -107,14 +110,20 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
               title: body.title,
               startedAt: Date.now(),
               status: "active",
+              transcriptPath: body.transcriptPath,
             });
           }
 
-          const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`);
-          const summary = generateUserSummary(db, projectId, projectName, `http://localhost:${port}`);
+          // Only the latest other session matters: that is the one being handed off from
+          const previous = getRecentSessions(db, projectId, 5).find((s) => s.id !== sessionId && s.transcriptPath);
+          const notice = previous ? interruptionNotice(previous) : undefined;
+          const notices = notice ? [notice] : [];
+
+          const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`, notices);
+          const summary = generateUserSummary(db, projectId, projectName, `http://localhost:${port}`, notices);
           sseHub.broadcast("session_start", { sessionId, projectId, agentType });
 
-          return jsonResponse({ status: "ok", sessionId, digest, summary });
+          return jsonResponse({ status: "ok", sessionId, isNew, digest, summary });
         }
 
         if (event === "post-tool") {
@@ -180,8 +189,8 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
             });
           }
 
-          if (typeof body.summary === "string" && body.summary) {
-            updateSession(db, sessionId, { summary: body.summary });
+          if ((typeof body.summary === "string" && body.summary) || body.transcriptPath) {
+            updateSession(db, sessionId, { summary: body.summary || undefined, transcriptPath: body.transcriptPath });
           }
 
           let recorded = 0;
@@ -222,6 +231,14 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
         }
 
         return jsonResponse({ error: "Unknown event type" }, 400);
+      }
+
+      // 4.5 Session list (for picking a session to resume)
+      if (url.pathname === "/api/sessions" && req.method === "GET") {
+        const projectId = url.searchParams.get("project") || "default";
+        const rawLimit = parseInt(url.searchParams.get("limit") || "10", 10);
+        const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
+        return jsonResponse({ sessions: getRecentSessions(db, projectId, limit) });
       }
 
       // 5. Search API

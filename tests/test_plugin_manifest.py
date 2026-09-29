@@ -76,6 +76,22 @@ class TestPluginManifest(unittest.TestCase):
         self.assertIn('"$AGENT_MEM" get', content)
         self.assertIn("http://localhost:3777", content)
 
+    def test_resume_skill_loads_handoff_from_plugin_cli(self):
+        skill_md = os.path.join(self.repo_root, "skills", "resume", "SKILL.md")
+        with open(skill_md, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        frontmatter = content.split("---\n", 2)[1]
+        self.assertIn("name: resume", frontmatter)
+        self.assertIn("description:", frontmatter)
+
+        # Same cwd-independent CLI resolution as mem-search
+        self.assertIn("../../agent-mem/bin/agent-mem.ts", content)
+        self.assertNotIn("bun run agent-mem/bin/", content)
+        self.assertIn('"$AGENT_MEM" sessions', content)
+        self.assertIn('"$AGENT_MEM" handoff', content)
+        self.assertIn("git status", content)
+
     def test_all_skills_have_valid_structure(self):
         skills_dir = os.path.join(self.repo_root, "skills")
         self.assertTrue(os.path.isdir(skills_dir))

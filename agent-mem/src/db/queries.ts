@@ -15,6 +15,7 @@ export interface Session {
   startedAt: number;
   endedAt?: number;
   status: string;
+  transcriptPath?: string;
 }
 
 export interface EventRecord {
@@ -54,8 +55,8 @@ export function upsertProject(db: Database, project: Project): void {
 
 export function insertSession(db: Database, session: Session): void {
   const stmt = db.prepare(`
-    INSERT INTO sessions (id, project_id, agent_type, title, summary, started_at, ended_at, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, project_id, agent_type, title, summary, started_at, ended_at, status, transcript_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   stmt.run(
     session.id,
@@ -65,7 +66,8 @@ export function insertSession(db: Database, session: Session): void {
     session.summary || null,
     session.startedAt,
     session.endedAt || null,
-    session.status || "active"
+    session.status || "active",
+    session.transcriptPath || null
   );
 }
 
@@ -78,7 +80,8 @@ export function updateSession(db: Database, id: string, updates: Partial<Session
     SET title = COALESCE(?, title),
         summary = COALESCE(?, summary),
         ended_at = COALESCE(?, ended_at),
-        status = COALESCE(?, status)
+        status = COALESCE(?, status),
+        transcript_path = COALESCE(?, transcript_path)
     WHERE id = ?
   `);
   stmt.run(
@@ -86,6 +89,7 @@ export function updateSession(db: Database, id: string, updates: Partial<Session
     updates.summary ?? null,
     updates.endedAt ?? null,
     updates.status ?? null,
+    updates.transcriptPath ?? null,
     id
   );
 }
@@ -180,7 +184,8 @@ export function getObservationById(db: Database, id: string): Observation | null
 export function getRecentSessions(db: Database, projectId: string, limit: number = 3): Session[] {
   const rows = db.prepare(`
     SELECT id, project_id as projectId, agent_type as agentType,
-           title, summary, started_at as startedAt, ended_at as endedAt, status
+           title, summary, started_at as startedAt, ended_at as endedAt, status,
+           transcript_path as transcriptPath
     FROM sessions
     WHERE project_id = ?
     ORDER BY started_at DESC

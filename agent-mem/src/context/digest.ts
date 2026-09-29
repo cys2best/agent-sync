@@ -32,10 +32,14 @@ export function generateCompactDigest(
   projectId: string,
   projectName: string,
   webViewerUrl: string = "http://localhost:3777",
-  notices: string[] = []
+  notices: string[] = [],
+  currentSessionId?: string
 ): string {
   const config = getConfig();
-  const sessions = getRecentSessions(db, projectId, config.maxRecentSessionsInDigest);
+  // The session being started has nothing to report yet; list only past sessions
+  const sessions = getRecentSessions(db, projectId, config.maxRecentSessionsInDigest + 1)
+    .filter((s) => s.id !== currentSessionId)
+    .slice(0, config.maxRecentSessionsInDigest);
   const observations = getRecentObservations(db, projectId, 5);
 
   const base = webViewerUrl.replace(/\/+$/, "");

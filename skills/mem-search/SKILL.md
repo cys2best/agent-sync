@@ -12,6 +12,8 @@ Query past project activity, architectural decisions, and tool observations with
 The CLI ships with this plugin at `../../agent-mem/bin/agent-mem.ts`, relative to this skill's directory. Resolve it to an absolute path first; do not run it relative to the project cwd:
 `AGENT_MEM="<this skill's directory>/../../agent-mem/bin/agent-mem.ts"`
 
+The CLI talks to a local daemon on `127.0.0.1:3777`. In Codex, the default sandbox blocks that connection, so run these commands with escalated permissions (outside the sandbox) from the first call.
+
 1. **Search Memory (Progressive Disclosure):**
    Run:
    `bun run "$AGENT_MEM" search "<query>"`

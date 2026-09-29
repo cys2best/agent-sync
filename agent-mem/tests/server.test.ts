@@ -298,4 +298,14 @@ describe("memory daemon HTTP server", () => {
     const stopped = await stopDaemon(59123);
     expect(stopped).toBe(false);
   });
+
+  it("fails with a sandbox hint when the daemon cannot be reached", async () => {
+    // Something else holds the port, so the spawned daemon cannot bind and health never passes
+    const squatter = Bun.serve({ port: 0, fetch: () => new Response("nope", { status: 404 }) });
+    try {
+      await expect(ensureDaemonRunning(squatter.port)).rejects.toThrow(/not reachable.*sandbox/s);
+    } finally {
+      squatter.stop(true);
+    }
+  });
 });

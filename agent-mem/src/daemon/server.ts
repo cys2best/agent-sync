@@ -146,7 +146,7 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
           const notice = previous ? interruptionNotice(previous) : undefined;
           const notices = notice ? [notice] : [];
 
-          const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`, notices);
+          const digest = generateCompactDigest(db, projectId, projectName, `http://localhost:${port}`, notices, sessionId);
           const summary = generateUserSummary(db, projectId, projectName, `http://localhost:${port}`, notices);
           sseHub.broadcast("session_start", { sessionId, projectId, agentType });
 

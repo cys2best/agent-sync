@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createMemoryServer } from "../src/daemon/server";
+import { getProjectId } from "../src/config";
 import type { Server } from "bun";
 
 describe("CLI entry point", () => {
@@ -212,7 +213,11 @@ describe("CLI entry point", () => {
     });
     const stdout = await new Response(proc.stdout).text();
     expect(await proc.exited).toBe(0);
-    expect(stdout).toContain("[claude-ses-keep]");
+    expect(stdout).toContain("AGENT-MEM: PROJECT MEMORY");
+
+    const res = await fetch(`http://127.0.0.1:${testPort}/api/sessions?project=${getProjectId("/tmp/agent-mem-keep")}`);
+    const ids = (((await res.json()) as any).sessions as any[]).map((s) => s.id);
+    expect(ids).toContain("claude-ses-keep");
   });
 
   it("hook transcript summarizes a Codex session with --agent codex", async () => {

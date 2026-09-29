@@ -48,7 +48,10 @@ export async function ensureDaemonRunning(port?: number): Promise<string> {
     }
   }
 
-  return `http://127.0.0.1:${targetPort}`;
+  throw new Error(
+    `agent-mem daemon is not reachable at http://127.0.0.1:${targetPort}. ` +
+      "If this command runs inside a sandbox that blocks network access (for example Codex), rerun it with network access or outside the sandbox."
+  );
 }
 
 export async function stopDaemon(port?: number): Promise<boolean> {

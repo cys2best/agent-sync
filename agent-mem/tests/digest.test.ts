@@ -149,4 +149,15 @@ describe("compact digest generator", () => {
     expect(digest).toContain("[ses_title_only] (codex, 2m ago): Refactored queries");
     expect(digest).toContain("[ses_no_title] (antigravity, 2d ago): Working session");
   });
+  it("leaves the current session out of recent activity so it lists past sessions only", () => {
+    for (const [id, ago] of [["ses_a", 3], ["ses_b", 2], ["ses_c", 1]] as const) {
+      insertSession(db, { id, projectId: "proj_demo", agentType: "codex", summary: `past ${id}`, startedAt: Date.now() - ago * 60000, status: "completed" });
+    }
+    insertSession(db, { id: "ses_now", projectId: "proj_demo", agentType: "codex", startedAt: Date.now(), status: "active" });
+
+    const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents", "http://localhost:3777", [], "ses_now");
+    expect(digest).not.toContain("[ses_now]");
+    expect(digest).toContain("[ses_a]");
+    expect(digest).toContain("[ses_c]");
+  });
 });

@@ -75,9 +75,12 @@ const agents: Agent[] = [
     name: "claude",
     detect: () => Bun.which("claude") !== null,
     install(ctx) {
-      const markets = JSON.parse(ctx.query(["claude", "plugin", "marketplace", "list", "--json"])) as { name: string }[];
-      const hasMarket = markets.some((m) => m.name === "agent-sync");
-      ctx.act(hasMarket ? ["claude", "plugin", "marketplace", "update", "agent-sync"] : ["claude", "plugin", "marketplace", "add", "cys2best/agent-sync"]);
+      const markets = JSON.parse(ctx.query(["claude", "plugin", "marketplace", "list", "--json"])) as { name: string; source?: string; repo?: string }[];
+      const market = markets.find((m) => m.name === "agent-sync");
+      const fromGitHub = market?.source === "github" && market.repo === "cys2best/agent-sync";
+      // A marketplace of the same name from elsewhere (e.g. a local clone) is re-pointed at GitHub
+      if (market && !fromGitHub) ctx.act(["claude", "plugin", "marketplace", "remove", "agent-sync"]);
+      ctx.act(fromGitHub ? ["claude", "plugin", "marketplace", "update", "agent-sync"] : ["claude", "plugin", "marketplace", "add", "cys2best/agent-sync"]);
       const plugins = JSON.parse(ctx.query(["claude", "plugin", "list", "--json"])) as { id: string }[];
       const hasPlugin = plugins.some((p) => p.id === "agent-sync@agent-sync");
       ctx.act(["claude", "plugin", hasPlugin ? "update" : "install", "agent-sync@agent-sync"]);
@@ -89,11 +92,8 @@ const agents: Agent[] = [
     name: "codex",
     detect: () => Bun.which("codex") !== null,
     install(ctx) {
-      const listed = ctx
-        .query(["codex", "plugin", "marketplace", "list"])
-        .split("\n")
-        .map((line) => line.match(/^agent-sync\s+(.+)$/)?.[1].trim())
-        .find((path) => path !== undefined);
+      const { marketplaces } = JSON.parse(ctx.query(["codex", "plugin", "marketplace", "list", "--json"])) as { marketplaces: { name: string; root: string }[] };
+      const listed = marketplaces.find((m) => m.name === "agent-sync")?.root;
       if (listed !== undefined && listed !== ctx.root) ctx.act(["codex", "plugin", "marketplace", "remove", "agent-sync"]);
       if (listed !== ctx.root) ctx.act(["codex", "plugin", "marketplace", "add", ctx.root]);
       ctx.act(["codex", "plugin", "add", "agent-sync@agent-sync"]);

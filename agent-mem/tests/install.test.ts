@@ -12,11 +12,12 @@ name=$(basename "$0")
 echo "$name $*" >> "$FAKE_LOG"
 [ "$FAKE_FAIL" = "$name" ] && { echo "boom" >&2; exit 1; }
 case "$name $*" in
-  "claude plugin marketplace list --json") [ -f "$FAKE_STATE/claude-mkt" ] && echo '[{"name":"agent-sync"}]' || echo '[]' ;;
-  "claude plugin marketplace add"*) touch "$FAKE_STATE/claude-mkt" ;;
+  "claude plugin marketplace list --json") [ -f "$FAKE_STATE/claude-mkt" ] && echo "[$(cat "$FAKE_STATE/claude-mkt")]" || echo '[]' ;;
+  "claude plugin marketplace add cys2best/agent-sync") echo '{"name":"agent-sync","source":"github","repo":"cys2best/agent-sync"}' > "$FAKE_STATE/claude-mkt" ;;
+  "claude plugin marketplace remove"*) rm -f "$FAKE_STATE/claude-mkt" ;;
   "claude plugin list --json") [ -f "$FAKE_STATE/claude-plugin" ] && echo '[{"id":"agent-sync@agent-sync"}]' || echo '[]' ;;
   "claude plugin install"*) touch "$FAKE_STATE/claude-plugin" ;;
-  "codex plugin marketplace list") echo "MARKETPLACE  ROOT"; [ -f "$FAKE_STATE/codex-mkt" ] && echo "agent-sync   $(cat "$FAKE_STATE/codex-mkt")" ;;
+  "codex plugin marketplace list --json") [ -f "$FAKE_STATE/codex-mkt" ] && printf '{"marketplaces":[{"name":"agent-sync","root":"%s"}]}\n' "$(cat "$FAKE_STATE/codex-mkt")" || echo '{"marketplaces":[]}' ;;
   "codex plugin marketplace add"*) echo "$4" > "$FAKE_STATE/codex-mkt" ;;
   "codex plugin marketplace remove"*) rm -f "$FAKE_STATE/codex-mkt" ;;
 esac
@@ -137,6 +138,16 @@ describe("agent-mem install", () => {
     const calls = r.calls();
     expect(calls).toContain("codex plugin marketplace remove agent-sync");
     expect(calls).toContain(`codex plugin marketplace add ${root}`);
+  });
+
+  it("re-points a Claude marketplace added from somewhere other than GitHub", async () => {
+    writeFileSync(join(state, "claude-mkt"), '{"name":"agent-sync","source":"directory","path":"/dev/clone"}\n');
+    const r = await install(["--agent", "claude"]);
+    expect(r.code).toBe(0);
+    const calls = r.calls();
+    expect(calls).toContain("claude plugin marketplace remove agent-sync");
+    expect(calls).toContain("claude plugin marketplace add cys2best/agent-sync");
+    expect(calls).not.toContain("claude plugin marketplace update agent-sync");
   });
 
   it("--dry-run changes nothing", async () => {

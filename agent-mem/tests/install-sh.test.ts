@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -70,6 +70,23 @@ describe("install.sh", () => {
     const r = await runScript();
     expect(r.code).toBe(0);
     expect(r.stderr.trim()).toBe(`agent-sync: could not fast-forward ${dest}; installing the current checkout.`);
+  });
+
+  it("runs nothing when the download is cut off", async () => {
+    const full = readFileSync(script, "utf-8");
+    const cut = full.slice(0, full.indexOf('git clone --quiet "$repo"') + 'git clone --quiet "$repo"'.length);
+    const partial = join(tmp, "partial.sh");
+    const cwd = join(tmp, "cwd");
+    mkdirSync(cwd);
+    writeFileSync(partial, cut);
+    const proc = Bun.spawn(["/bin/bash", partial], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { HOME: tmp, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AGENT_SYNC_REPO: src, AGENT_SYNC_HOME: dest },
+    });
+    await proc.exited;
+    expect(readdirSync(cwd)).toEqual([]);
   });
 
   it("stops when bun is missing", async () => {

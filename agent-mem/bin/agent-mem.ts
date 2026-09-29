@@ -5,7 +5,8 @@ import { formatHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { installAntigravityHooks, installCodexHooks } from "../src/install/hooks";
-import { existsSync, readFileSync } from "node:fs";
+import { AGENTS, runInstall } from "../src/install/install";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 
@@ -25,6 +26,7 @@ Commands:
   handoff [<session-id>]         Print where a session stopped (default: latest interrupted one)
   digest                         Output the compact startup digest for this project
   setup [--agent <type>]         Install hooks for an agent (antigravity, claude, codex)
+  install [--agent <name>]       Install or upgrade agent-sync skills and hooks for every detected agent
   help                           Show this help message
 
 Options for hook:
@@ -35,6 +37,10 @@ Options for hook:
 Options for setup:
   --agent <type>                 Agent type: antigravity (default), claude, codex
   --scope <scope>                Scope: global (default), project
+
+Options for install:
+  --agent <name>                 Only this agent: claude, codex, antigravity, grok
+  --dry-run                      Print what would change without changing anything
 `);
 }
 
@@ -464,6 +470,24 @@ if (command === "daemon") {
     console.error(`Unknown agent type: ${agentType}. Supported: antigravity, claude, codex`);
     process.exit(1);
   }
+} else if (command === "install") {
+  const only = getArgValue("--agent");
+  if (only && !AGENTS.includes(only)) {
+    console.error(`Unknown agent: ${only}. Supported: ${AGENTS.join(", ")}`);
+    process.exit(1);
+  }
+  const results = runInstall({
+    root: realpathSync(resolve(import.meta.dir, "../..")),
+    home: process.env.HOME || homedir(),
+    only,
+    dryRun: args.includes("--dry-run"),
+  });
+  const icon = { ok: "✅", skipped: "⏭", failed: "✗" } as const;
+  for (const r of results) console.log(`${icon[r.status]} ${r.agent}: ${r.detail}`);
+  if (results.some((r) => r.status === "ok")) {
+    console.log(`\nNext: restart your agents, then rerun /agent-sync:setup in each project to pick up new templates.`);
+  }
+  process.exit(results.some((r) => r.status === "failed") ? 1 : 0);
 } else {
   console.error(`Unknown command: ${command}`);
   printHelp();

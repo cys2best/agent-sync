@@ -37,31 +37,57 @@ unfinished — without duplicating what workflow plugins such as
 
 ## Install
 
-### Claude Code
-Add this repo as a marketplace source, then install the plugin:
-```
-/plugin marketplace add cys2best/agent-sync
-/plugin install agent-sync
-```
+One command installs agent-sync for every coding agent it finds on your
+machine. Run the same command again to upgrade.
 
-### Google Antigravity (`agy`)
-Clone into your Antigravity global configuration (or workspace `.agents/` directory):
 ```bash
-# Global installation (available across all projects)
-git clone https://github.com/cys2best/agent-sync.git ~/.gemini/config/plugins/agent-sync
-
-# Or workspace-level installation
-git clone https://github.com/cys2best/agent-sync.git .agents/plugins/agent-sync
+curl -fsSL https://raw.githubusercontent.com/cys2best/agent-sync/main/install.sh | bash
 ```
-Antigravity automatically loads `agent-sync` skills and respects project instructions in `AGENTS.md`.
 
-### Grok (Grok Build CLI)
-Clone into Grok's skills directory:
+It needs `git` and [Bun](https://bun.sh). It clones the repo to
+`~/.agent-sync` (or pulls it if it's already there), then installs each agent
+it detects:
+
+| Agent | Detected by | Skills | agent-mem hooks |
+|---|---|---|---|
+| Claude Code | `claude` on PATH | Plugin `agent-sync@agent-sync` from the `cys2best/agent-sync` marketplace (installed or updated) | Ship with the plugin |
+| Codex | `codex` on PATH | Plugin `agent-sync@agent-sync` from a local marketplace at `~/.agent-sync` | Merged into `~/.codex/hooks.json` |
+| Antigravity | `agy` on PATH or `~/.gemini/config` | `~/.gemini/config/plugins/agent-sync` links to `~/.agent-sync` | `agent-mem` entry in `~/.gemini/config/hooks.json` |
+| Grok | `grok` on PATH or `~/.grok` | `~/.grok/skills/agent-sync` links to `~/.agent-sync` | — |
+
+Rerunning is safe: hooks from other tools are kept, nothing is added twice, and
+a hooks file that isn't valid JSON is reported and left alone. An older copy
+already sitting at a plugin path (for example a previous `git clone` into
+`~/.gemini/config/plugins/agent-sync`) is moved to `~/.agent-sync-backups/`.
+
+Options (pass after `bash -s --`):
+
+- `--dry-run` shows what would change without changing anything.
+- `--agent <claude|codex|antigravity|grok>` installs one agent only.
+
+To install from a clone you are developing in, set `AGENT_SYNC_HOME`:
+
 ```bash
-# Global installation (available across all projects)
-git clone https://github.com/cys2best/agent-sync.git ~/.grok/skills/agent-sync
+AGENT_SYNC_HOME=~/code/agent-sync ./install.sh
 ```
-Grok Build automatically reads repository conventions and handoffs from `AGENTS.md`.
+
+Codex installs the clone's last commit, so commit before rerunning to pick up
+local changes. Claude Code always installs from GitHub.
+
+After installing or upgrading, restart your agents and rerun
+`/agent-sync:setup` in each project to pick up new templates.
+
+<details>
+<summary>Manual install</summary>
+
+- **Claude Code:** `/plugin marketplace add cys2best/agent-sync`, then `/plugin install agent-sync`.
+- **Codex:** `codex plugin marketplace add <clone>`, then `codex plugin add agent-sync@agent-sync`.
+- **Antigravity:** clone or link the repo to `~/.gemini/config/plugins/agent-sync` (or `.agents/plugins/agent-sync` for one workspace).
+- **Grok:** clone or link the repo to `~/.grok/skills/agent-sync`.
+
+Hooks for Codex and Antigravity: `bun run <clone>/agent-mem/bin/agent-mem.ts setup --agent <codex|antigravity>` (add `--scope project` for the current workspace only).
+
+</details>
 
 ## Use
 
@@ -138,26 +164,15 @@ Search past work: /agent-sync:mem-search
 Live viewer: http://localhost:3777/p/<project-id>
 ```
 
-**Antigravity** — install the hooks once (global, or `--scope project` for the
-current workspace):
-
-```bash
-bun run <plugin-dir>/agent-mem/bin/agent-mem.ts setup --agent antigravity
-```
-
-**Codex** — install the hooks once. This merges `SessionStart` and `Stop` into
-`~/.codex/hooks.json` (or `.codex/hooks.json` with `--scope project`), keeping
-any hooks already there; rerun it after upgrading the plugin:
-
-```bash
-bun run <plugin-dir>/agent-mem/bin/agent-mem.ts setup --agent codex
-```
+**Codex and Antigravity** — `install.sh` installs their hooks. To install
+hooks for one workspace only, run
+`bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts setup --agent <codex|antigravity> --scope project`.
 
 Search past work with the `/agent-sync:mem-search` skill, or directly:
 
 ```bash
-bun run <plugin-dir>/agent-mem/bin/agent-mem.ts search "<query>"
-bun run <plugin-dir>/agent-mem/bin/agent-mem.ts get <observation-id>
+bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts search "<query>"
+bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts get <observation-id>
 ```
 
 When a session stops, its transcript is recorded and summarized as the first

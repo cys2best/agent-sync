@@ -16,3 +16,4 @@ __pycache__/
 # Local private notes
 *.local.md
 .local.md
+.agent-sync/todo/

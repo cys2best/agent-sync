@@ -32,6 +32,7 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
 - Commit format: `<type>(optional-scope): imperative description` (see `COMMIT_CONVENTION.md`)
 - Commit example: `feat(auth): add token refresh`
 - If a plugin workflow (e.g. Superpowers) owns task state, continue through its own command; never hand-edit its state files.
+- Otherwise, build features and fix bugs by following `.agent-sync/TDD.md` (todo list, then red → green → refactor per task).
 
 ## Claude Code, Codex, Antigravity specific
 - Shared memory (agent-mem): a short digest of recent sessions from every agent is injected at session start. Don't re-explore work it already covers; search with `/agent-sync:mem-search` before re-reading large files or re-running long investigations.

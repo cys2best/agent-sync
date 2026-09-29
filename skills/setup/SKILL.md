@@ -37,6 +37,8 @@ The script will:
 - Render target files using modular templates (`skills/setup/templates/*.template`).
 - Preserve any custom content outside managed markers (`<!-- agent-sync:...:start -->` ... `<!-- agent-sync:...:end -->`).
 - Preserve `COMMIT_CONVENTION.md` and `MEMORY.md` byte-for-byte if they already exist.
+- Create `.agent-sync/TDD.md`, the default TDD workflow agents follow when no plugin workflow is in use; preserve it if it exists.
+- Add `.agent-sync/todo/` (the TDD workflow's local todo lists) to `.gitignore` if it is not listed.
 - Configure `.claude/settings.json` attribution and vendor permission limits, and remove the HANDOFF archive hook older versions installed.
 - Drop the retired `workflowTools` key from `.agent-sync/config.json`.
 - Leave an existing `HANDOFF.md` untouched (it is no longer managed) and say so.
@@ -45,7 +47,7 @@ The script will:
 
 ## Phase 3 — Verify and report
 
-1. Re-read generated/updated target files (`AGENTS.md`, `COMMIT_CONVENTION.md`, `CLAUDE.md`, `MEMORY.md`, `.claude/settings.json`).
+1. Re-read generated/updated target files (`AGENTS.md`, `COMMIT_CONVENTION.md`, `CLAUDE.md`, `MEMORY.md`, `.agent-sync/TDD.md`, `.claude/settings.json`).
 2. Verify created/updated files maintain expected managed markers.
 3. Report disposition for every target: created, updated, regenerated, or preserved.
 4. Relay any `agent-mem hooks not installed` lines to the user with the exact command. Do not run it yourself: it edits the user's global agent config outside this repository.

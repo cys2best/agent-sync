@@ -92,6 +92,10 @@ class TestPluginManifest(unittest.TestCase):
         self.assertIn('"$AGENT_MEM" handoff', content)
         self.assertIn("git status", content)
 
+    def test_resume_skill_checks_for_an_in_progress_todo_list(self):
+        with open(os.path.join(self.repo_root, "skills", "resume", "SKILL.md"), "r", encoding="utf-8") as f:
+            self.assertIn(".agent-sync/todo/", f.read())
+
     def test_all_skills_have_valid_structure(self):
         skills_dir = os.path.join(self.repo_root, "skills")
         self.assertTrue(os.path.isdir(skills_dir))

@@ -58,6 +58,13 @@ class TestSetupScript(unittest.TestCase):
         self.assertIn("/agent-sync:resume", agents_text)
         self.assertIn("/agent-sync:mem-search", agents_text)
         self.assertIn("never hand-edit its state files", agents_text)
+        self.assertIn("`.agent-sync/TDD.md`", agents_text)
+
+        # Default TDD workflow for projects without a plugin workflow
+        with open(os.path.join(self.test_dir, ".agent-sync", "TDD.md")) as f:
+            tdd_text = f.read()
+        for step in ("RED", "GREEN", "REFACTOR", "approval", ".agent-sync/todo/"):
+            self.assertIn(step, tdd_text)
         self.assertNotIn("HANDOFF", agents_text)
         self.assertNotIn("Only engage", agents_text)
 
@@ -193,6 +200,35 @@ class TestSetupScript(unittest.TestCase):
             text = f.read()
         self.assertIn("- `api/`: public contract; never break it.", text)
         self.assertNotIn("HANDOFF", text)
+
+    def test_todo_lists_are_gitignored_once(self):
+        gitignore = os.path.join(self.test_dir, ".gitignore")
+        with open(gitignore, "w") as f:
+            f.write("node_modules/")  # no trailing newline
+        self.run_setup("--agents", "claude")
+        res = self.run_setup()
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(gitignore) as f:
+            lines = f.read().splitlines()
+        self.assertEqual(lines.count(".agent-sync/todo/"), 1)
+        self.assertIn("node_modules/", lines)
+
+    def test_gitignore_is_created_for_todo_lists(self):
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(os.path.join(self.test_dir, ".gitignore")) as f:
+            self.assertIn(".agent-sync/todo/", f.read().splitlines())
+
+    def test_existing_tdd_workflow_is_preserved(self):
+        custom = "# Our TDD rules\nPair on every RED step.\n"
+        path = os.path.join(self.test_dir, ".agent-sync", "TDD.md")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(custom)
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(path) as f:
+            self.assertEqual(f.read(), custom)
 
     def test_regenerate_context_creates_backup(self):
         agents_file = os.path.join(self.test_dir, "AGENTS.md")

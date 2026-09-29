@@ -26,6 +26,8 @@ AGENT_MEM_HOOK_FILES = {
     "antigravity": os.path.join(".gemini", "config", "hooks.json"),
 }
 
+TODO_DIR_IGNORE = ".agent-sync/todo/"
+
 VENDOR_DIR_CANDIDATES = [
     "node_modules", "vendor", ".venv", "venv", "target", "dist", "build", ".next", "__pycache__"
 ]
@@ -315,6 +317,21 @@ def missing_agent_mem_hooks(agent_ids, home_dir):
             missing.append(agent_id)
     return missing
 
+def ensure_gitignored(target_dir, pattern):
+    """Append `pattern` to the project's .gitignore unless already listed. Returns True when it was added."""
+    path = os.path.join(target_dir, ".gitignore")
+    existing = ""
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            existing = f.read()
+    if pattern in existing.splitlines():
+        return False
+    with open(path, "a", encoding="utf-8") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(pattern + "\n")
+    return True
+
 def update_claude_settings(target_dir, vendor_dirs):
     claude_dir = os.path.join(target_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
@@ -472,11 +489,24 @@ def run_setup(args):
     else:
         print("Preserved MEMORY.md")
 
-    # 5. .claude/settings.json
+    # 5. .agent-sync/TDD.md — default workflow; preserved once it exists so projects can tailor it
+    tdd_path = os.path.join(target_dir, ".agent-sync", "TDD.md")
+    if not os.path.isfile(tdd_path):
+        with open(tdd_path, "w", encoding="utf-8") as f:
+            f.write(read_template(templates_dir, "TDD.md.template"))
+        print("Created .agent-sync/TDD.md")
+    else:
+        print("Preserved .agent-sync/TDD.md")
+
+    # Todo lists are per-machine working state; handoff between agents reads them from the working tree
+    if ensure_gitignored(target_dir, TODO_DIR_IGNORE):
+        print(f"Added {TODO_DIR_IGNORE} to .gitignore")
+
+    # 6. .claude/settings.json
     update_claude_settings(target_dir, project_info.get("vendor_dirs", []))
     print("Updated .claude/settings.json")
 
-    # 6. Cleanup docs/PROJECT_CONTEXT.md if present
+    # 7. Cleanup docs/PROJECT_CONTEXT.md if present
     legacy_ctx = os.path.join(target_dir, "docs", "PROJECT_CONTEXT.md")
     if os.path.isfile(legacy_ctx):
         os.remove(legacy_ctx)
@@ -485,7 +515,7 @@ def run_setup(args):
     if os.path.isfile(os.path.join(target_dir, "HANDOFF.md")):
         print("HANDOFF.md is no longer managed (agent-mem sessions replace it); left untouched, delete it when unused")
 
-    # 7. Point out agents that will not record memory yet
+    # 8. Point out agents that will not record memory yet
     for agent_id in missing_agent_mem_hooks(configured_agent_ids, os.path.expanduser("~")):
         cli = os.path.join(plugin_root, "agent-mem", "bin", "agent-mem.ts")
         print(f'agent-mem hooks not installed for {agent_id}; run: bun run "{cli}" setup --agent {agent_id}')

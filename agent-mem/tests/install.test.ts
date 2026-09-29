@@ -147,6 +147,14 @@ describe("agent-mem install", () => {
     expect(existsSync(codexHooks())).toBe(false);
     expect(existsSync(geminiHooks())).toBe(false);
     expect(existsSync(agyLink())).toBe(false);
+    expect(r.stdout).not.toMatch(/plugin (installed|updated)/);
+  });
+
+  it("--dry-run reports that a stale clone would be moved", async () => {
+    mkdirSync(agyLink(), { recursive: true });
+    const r = await install(["--dry-run", "--agent", "antigravity"]);
+    expect(r.stdout).toContain("would move the existing directory to ~/.agent-sync-backups");
+    expect(lstatSync(agyLink()).isDirectory()).toBe(true);
   });
 
   it("--agent limits the run to one agent", async () => {

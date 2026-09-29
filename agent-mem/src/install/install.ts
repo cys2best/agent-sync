@@ -47,7 +47,10 @@ function linkPlugin(ctx: Ctx, agent: string, link: string): string {
     stat = lstatSync(link);
   } catch {}
   if (stat && existsSync(link) && realpathSync(link) === ctx.root) return `${link} already links to ${ctx.root}`;
-  if (ctx.dryRun) return `would link ${link} -> ${ctx.root}`;
+  if (ctx.dryRun) {
+    const move = stat && !stat.isSymbolicLink() ? " (would move the existing directory to ~/.agent-sync-backups)" : "";
+    return `would link ${link} -> ${ctx.root}${move}`;
+  }
   mkdirSync(dirname(link), { recursive: true });
   let note = "";
   if (stat?.isSymbolicLink()) {
@@ -78,6 +81,7 @@ const agents: Agent[] = [
       const plugins = JSON.parse(ctx.query(["claude", "plugin", "list", "--json"])) as { id: string }[];
       const hasPlugin = plugins.some((p) => p.id === "agent-sync@agent-sync");
       ctx.act(["claude", "plugin", hasPlugin ? "update" : "install", "agent-sync@agent-sync"]);
+      if (ctx.dryRun) return [`would ${hasPlugin ? "update" : "install"} the plugin`];
       return [`plugin ${hasPlugin ? "updated" : "installed"} (restart Claude Code to load it)`];
     },
   },
@@ -93,7 +97,8 @@ const agents: Agent[] = [
       if (listed !== undefined && listed !== ctx.root) ctx.act(["codex", "plugin", "marketplace", "remove", "agent-sync"]);
       if (listed !== ctx.root) ctx.act(["codex", "plugin", "marketplace", "add", ctx.root]);
       ctx.act(["codex", "plugin", "add", "agent-sync@agent-sync"]);
-      return ["plugin installed from the checkout's committed HEAD", hooks(ctx, join(ctx.home, ".codex", "hooks.json"), installCodexHooks)];
+      const plugin = ctx.dryRun ? "would install the plugin from the checkout's committed HEAD" : "plugin installed from the checkout's committed HEAD";
+      return [plugin, hooks(ctx, join(ctx.home, ".codex", "hooks.json"), installCodexHooks)];
     },
   },
   {

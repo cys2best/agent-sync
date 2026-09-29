@@ -64,6 +64,14 @@ describe("install.sh", () => {
     expect(readFileSync(join(dest, "VERSION"), "utf-8")).toBe("local\n");
   });
 
+  it("prints only its own warning when the pull cannot fast-forward", async () => {
+    await runScript();
+    git(dest, "checkout", "-q", "-b", "detached-work");
+    const r = await runScript();
+    expect(r.code).toBe(0);
+    expect(r.stderr.trim()).toBe(`agent-sync: could not fast-forward ${dest}; installing the current checkout.`);
+  });
+
   it("stops when bun is missing", async () => {
     const r = await runScript([], "/usr/bin:/bin");
     expect(r.code).toBe(1);

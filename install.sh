@@ -17,7 +17,7 @@ done
 if [ -d "$home/.git" ]; then
   if [ -n "$(git -C "$home" status --porcelain)" ]; then
     echo "agent-sync: $home has local changes; skipping update and installing the current checkout." >&2
-  elif ! git -C "$home" pull --ff-only --quiet; then
+  elif ! git -C "$home" pull --ff-only --quiet 2>/dev/null; then
     echo "agent-sync: could not fast-forward $home; installing the current checkout." >&2
   fi
 elif [ -e "$home" ]; then

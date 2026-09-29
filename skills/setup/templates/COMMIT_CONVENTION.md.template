@@ -40,5 +40,5 @@ Breaking changes (correlating with `MAJOR` in SemVer) MUST be signaled by:
 5. **Scope**: Optional noun enclosed in parentheses describing the affected codebase section (e.g., `feat(config): ...`).
 6. **Body & Footers**: Optional. When provided, separate the header, body, and footers with a single blank line.
 7. **Clean Traceability**:
-   - Do NOT include agent identities, plan names, or task numbers in commit messages (traceability belongs in `HANDOFF.md` and workflow state).
+   - Do NOT include agent identities, plan names, or task numbers in commit messages (traceability belongs in workflow state and agent-mem sessions).
    - Do NOT add "Co-Authored-By", AI-attribution footers, or generator trailers to commits or PRs.

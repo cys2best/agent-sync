@@ -1,38 +1,26 @@
 {
   "claude": {
     "displayName": "Claude Code",
-    "contextFile": "AGENTS.md",
-    "supportsImports": false,
-    "modelDefaults": { "planning": "sonnet", "implementation": "haiku", "review": "sonnet" },
-    "modelSelectionInstructions": "Use the supported subagent model option or a custom subagent model field when the workflow dispatches a phase. For work in the main session, the user can select the model with /model. Verify host overrides have not forced a different model."
+    "contextFile": "AGENTS.md"
   },
   "codex": {
     "displayName": "Codex",
-    "contextFile": "AGENTS.md",
-    "supportsImports": false,
-    "modelDefaults": { "planning": "gpt-5.6-sol", "implementation": "gpt-5.6-luna", "review": "gpt-5.6-sol" },
-    "modelSelectionInstructions": "Use an exposed subagent model override or the workflow's configured custom agent model when supported. For main-session work, request the host's model picker or a new CLI session with -m MODEL. A Markdown instruction alone does not change the running model."
+    "contextFile": "AGENTS.md"
   },
   "gemini": {
     "displayName": "Gemini",
-    "contextFile": "GEMINI.md",
-    "supportsImports": false
+    "contextFile": "GEMINI.md"
   },
   "cursor": {
     "displayName": "Cursor",
-    "contextFile": "AGENTS.md",
-    "supportsImports": false
+    "contextFile": "AGENTS.md"
   },
   "antigravity": {
     "displayName": "Antigravity",
-    "modelDefaults": { "planning": "gemini-flash3.7", "implementation": "gemini-flash3.7", "review": "gemini-flash3.7" },
-    "contextFile": "AGENTS.md",
-    "supportsImports": false,
-    "modelSelectionInstructions": "Use gemini-flash3.7 for every workflow phase through Antigravity's exposed model controls. Treat this as a configured model ID, not a Gemini CLI alias. Verify availability in the current host; if unavailable or not selectable, request a supported replacement or manual switch rather than silently substituting another model."
+    "contextFile": "AGENTS.md"
   },
   "grok": {
     "displayName": "Grok",
-    "contextFile": "AGENTS.md",
-    "supportsImports": false
+    "contextFile": "AGENTS.md"
   }
 }

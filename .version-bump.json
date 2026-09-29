@@ -1,14 +1,19 @@
 {
   "files": [
-    { "path": "plugin.json", "field": "version" },
-    { "path": ".claude-plugin/plugin.json", "field": "version" }
+    {
+      "path": "plugin.json",
+      "field": "version"
+    },
+    {
+      "path": ".claude-plugin/plugin.json",
+      "field": "version"
+    }
   ],
   "audit": {
     "exclude": [
       ".git",
       ".version-bump.json",
       "scripts/bump-version.sh",
-      ".agent-sync/HANDOFF.archive.md",
       "docs/superpowers"
     ]
   }

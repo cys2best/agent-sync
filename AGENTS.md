@@ -4,7 +4,6 @@
 This file contains shared project knowledge, conventions, and agent instructions.
 
 See:
-- HANDOFF.md — the running log between agents, per plan/task
 - MEMORY.md — project learnings, component pitfalls, and durable lessons
 - COMMIT_CONVENTION.md — commit message format and rules
 - AGENTS.local.md — local private notes and personal overrides (gitignored)
@@ -16,7 +15,7 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
 ## Commands
 
 - Verify: `python3 -m unittest discover -s tests -p "test_*.py" && python3 -c "import json, glob; [json.load(open(f)) for f in glob.glob('registry/*.json')]"`
-- Focused test: `python3 -m unittest tests.test_archive.TestArchiveScript.test_single_finished_plan_is_archived`
+- Focused test: `python3 -m unittest tests.test_setup.TestSetupScript.test_first_run_scaffolds_all_files`
 - Bump version: `scripts/bump-version.sh <new-version | patch | minor | major>`
 
 ## Boundaries
@@ -25,48 +24,21 @@ agent-sync scaffolds shared context and task handoffs for coding agents through 
 - `registry/*.json`: declarative agent/workflow definitions; skills consume registry or custom config instead of hardcoded agent/tool branches.
 - `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.
 - `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.
-- `HANDOFF.md`: task-ID ledger only; execution details remain in the workflow's own reports.
 - `MEMORY.md`: durable project lessons and component pitfalls.
 - `COMMIT_CONVENTION.md`: Conventional Commits format and rules.
 
 ## Conventions
 
 - Commit format: `<type>(optional-scope): imperative description` (see `COMMIT_CONVENTION.md`)
-- Commit example: `feat(config): add workflow model policies`
-- Live execution state belongs to Superpowers at `.superpowers/sdd/` and `docs/superpowers/`; use its lifecycle and never hand-edit those paths.
+- Commit example: `feat(auth): add token refresh`
+- If a plugin workflow (e.g. Superpowers) owns task state, continue through its own command; never hand-edit its state files.
 
 ## Claude Code, Codex, Antigravity specific
-- Only engage Superpowers when the user's prompt explicitly names it
-  or its plan/task artifacts (e.g. mentions Superpowers by name, or
-  references a path under `.superpowers/sdd/`, `docs/superpowers/`). Do not infer that a task belongs to
-  this workflow from task shape, complexity, or ambient activation signals
-  (`.superpowers/sdd/*/progress.md`, `docs/superpowers/plans/*.md`) alone — plain requests get a direct, ordinary
-  execution path. When the prompt does invoke Superpowers, follow
-  these rules in order:
-  1. When a requested task belongs to an active Superpowers plan, resume it through the applicable Superpowers execution workflow.
-  2. Keep task briefs, reports, progress, reviews, and completion state inside the Superpowers SDD flow.
-  3. Never execute a managed task manually or create or edit Superpowers-owned artifacts directly.
-  4. If the required workflow cannot be invoked, stop and report the blocker.
-  Do not substitute a manual or generic execution path once engaged.
-- Read `HANDOFF.md` to see which agent last touched each plan/task and what's next.
-- Before claiming or executing a plan task, check whether the user's prompt
-  explicitly names a configured workflow tool or its artifacts. Only then use
-  that tool's official lifecycle for the whole task, including its required
-  verification and report. A prompt that doesn't mention a workflow tool gets
-  a direct, ordinary execution path — do not route it through a workflow tool
-  on your own inference.
-- When claiming or progressing a plan task, update that plan's entry in
-  `HANDOFF.md` in-place (or add an entry if starting a new plan): record your
-  active agent identifier (use claude/codex/antigravity depending on which agent you
-  are running as), current task, finished tasks, next task, and blockers.
-- Before committing, follow the commit convention in `COMMIT_CONVENTION.md`. Keep plan names, task numbers, agent identity, and AI-attribution
-  out of the commit message; workflow state and `HANDOFF.md` retain task
-  traceability.
+- Shared memory (agent-mem): a short digest of recent sessions from every agent is injected at session start. Don't re-explore work it already covers; search with `/agent-sync:mem-search` before re-reading large files or re-running long investigations.
+- Resuming: if the digest warns that a session was interrupted, or the user says continue/resume work another agent started, run `/agent-sync:resume` first and continue its in-progress step instead of starting over.
+- Before committing, follow the commit convention in `COMMIT_CONVENTION.md`. Keep plan names, task numbers, agent identity, and AI-attribution out of the commit message.
 - Do not add a "Co-Authored-By" trailer or AI-attribution footer to
   commits or PRs. Disable auto-attribution in your respective agent config.
-- Keep only one entry per active plan in `HANDOFF.md`; update it in-place with
-  task IDs only. Do not add entries for idle sessions where no tasks progressed.
-- Persistent Memory: Query project history via skill `mem-search` or `bun run agent-mem/bin/agent-mem.ts search "<query>"`. Wrap private details in `<private>` tags. Live Web Viewer runs at http://localhost:3777.
 - Think Before Coding: State consequential assumptions and tradeoffs; ask when ambiguity changes the result, and suggest a simpler approach when appropriate.
 - Simplicity First: Implement only the requested behavior with the smallest clear solution; avoid speculative features, configuration, and abstractions.
 - Surgical Changes: Match local style, change only what the task requires, and remove only code made unused by your changes; flag unrelated cleanup separately.

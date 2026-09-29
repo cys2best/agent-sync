@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-setup.py - deterministic agent-sync project context & workflow scaffolding.
+setup.py - deterministic agent-sync project context scaffolding.
 Usage:
-    python3 setup.py [--target-dir PATH] [--regenerate-context] [--agents A,B,C] [--workflow-tools X,Y]
+    python3 setup.py [--target-dir PATH] [--regenerate-context] [--agents A,B,C]
 """
 
 import argparse
@@ -11,15 +11,20 @@ import glob
 import json
 import os
 import re
-import shutil
-import sys
 
 START_POLICY_MARKER = "<!-- agent-sync:agent-policy:start -->"
 END_POLICY_MARKER = "<!-- agent-sync:agent-policy:end -->"
-START_HANDOFF_MARKER = "<!-- agent-sync:handoff-template:start -->"
-END_HANDOFF_MARKER = "<!-- agent-sync:handoff-template:end -->"
 START_MEMORY_MARKER = "<!-- agent-sync:memory:start -->"
 END_MEMORY_MARKER = "<!-- agent-sync:memory:end -->"
+
+# Written by setup before HANDOFF.md was replaced by agent-mem; removed from settings on rerun
+LEGACY_ARCHIVE_HOOK_COMMAND = "python3 .agent-sync/scripts/archive.py"
+
+# Where each agent keeps global hooks, and how to tell agent-mem is installed there
+AGENT_MEM_HOOK_FILES = {
+    "codex": os.path.join(".codex", "hooks.json"),
+    "antigravity": os.path.join(".gemini", "config", "hooks.json"),
+}
 
 VENDOR_DIR_CANDIDATES = [
     "node_modules", "vendor", ".venv", "venv", "target", "dist", "build", ".next", "__pycache__"
@@ -179,17 +184,16 @@ def inspect_project(target_dir):
     if os.path.isdir(os.path.join(target_dir, "skills")):
         info["boundaries"].append("- `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.")
     if os.path.isdir(os.path.join(target_dir, "registry")):
-        info["boundaries"].append("- `registry/*.json`: declarative agent/workflow definitions; skills consume registry or custom config instead of hardcoded agent/tool branches.")
+        info["boundaries"].append("- `registry/*.json`: declarative agent definitions; skills consume registry or custom config instead of hardcoded agent branches.")
     if os.path.isdir(os.path.join(target_dir, ".agent-sync", "scripts")):
         info["boundaries"].append("- `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.")
     info["boundaries"].append("- `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.")
-    info["boundaries"].append("- `HANDOFF.md`: task-ID ledger only; execution details remain in the workflow's own reports.")
     info["boundaries"].append("- `MEMORY.md`: durable project lessons and component pitfalls.")
     info["boundaries"].append("- `COMMIT_CONVENTION.md`: Conventional Commits format and rules.")
 
     return info
 
-def resolve_effective_config(target_dir, cli_agents=None, cli_workflows=None):
+def resolve_effective_config(target_dir, cli_agents=None):
     config_dir = os.path.join(target_dir, ".agent-sync")
     config_path = os.path.join(config_dir, "config.json")
     legacy_path = os.path.join(target_dir, ".agent-sync.json")
@@ -207,24 +211,17 @@ def resolve_effective_config(target_dir, cli_agents=None, cli_workflows=None):
         agents = ["claude", "codex", "antigravity"]
         if cli_agents:
             agents = [a.strip() for a in cli_agents.split(",") if a.strip()]
-
-        workflows = ["superpowers"]
-        if cli_workflows is not None:
-            workflows = [w.strip() for w in cli_workflows.split(",") if w.strip()]
-
-        config = {
-            "agents": agents,
-            "workflowTools": workflows
-        }
+        config = {"agents": agents}
 
     if cli_agents and not migrated and os.path.isfile(config_path):
         config["agents"] = [a.strip() for a in cli_agents.split(",") if a.strip()]
-    if cli_workflows is not None and not migrated and os.path.isfile(config_path):
-        config["workflowTools"] = [w.strip() for w in cli_workflows.split(",") if w.strip()]
+
+    # Workflow tools no longer need configuring: agent-mem resume plus the workflow's own command replace it
+    config.pop("workflowTools", None)
 
     return config, migrated
 
-def render_agents_md(template, effective_config, agents_registry, workflow_registry, project_info):
+def render_agents_md(template, effective_config, agents_registry, project_info):
     configured_agents = effective_config.get("agents", [])
     resolved_agents = []
     for item in configured_agents:
@@ -232,7 +229,6 @@ def render_agents_md(template, effective_config, agents_registry, workflow_regis
             meta = agents_registry.get(item, {
                 "displayName": item.title(),
                 "contextFile": "AGENTS.md",
-                "supportsImports": False
             })
             resolved_agents.append((item, meta))
         elif isinstance(item, dict):
@@ -241,21 +237,13 @@ def render_agents_md(template, effective_config, agents_registry, workflow_regis
 
     # Agents mapped to AGENTS.md
     target_agents = [a for a in resolved_agents if a[1].get("contextFile", "AGENTS.md") == "AGENTS.md"]
-    other_agents = [a for a in resolved_agents if a[1].get("contextFile", "AGENTS.md") != "AGENTS.md"]
 
     target_display_names = [a[1].get("displayName", a[0]) for a in target_agents]
-    target_ids = [a[0] for a in target_agents]
 
     if len(target_agents) == 1:
         agent_name = target_display_names[0]
-        agent_id = target_ids[0]
         agent_title = f"# {agent_name} Instructions"
         agent_section = f"## {agent_name} specific"
-        claim_rule = (
-            f"- When claiming or progressing a plan task, update that plan's entry in\n"
-            f"  `HANDOFF.md` in-place (or add an entry if starting a new plan): record\n"
-            f"  `{agent_id}`, current task, finished tasks, next task, and blockers."
-        )
         attribution_rule = (
             "- Do not add a \"Co-Authored-By\" trailer or AI-attribution footer to\n"
             "  commits or PRs. If this agent's setup has an equivalent\n"
@@ -266,65 +254,10 @@ def render_agents_md(template, effective_config, agents_registry, workflow_regis
         joined_names = ", ".join(target_display_names)
         agent_title = f"# Agent Instructions ({joined_names})"
         agent_section = f"## {joined_names} specific"
-        slash_ids = "/".join(target_ids)
-        claim_rule = (
-            f"- When claiming or progressing a plan task, update that plan's entry in\n"
-            f"  `HANDOFF.md` in-place (or add an entry if starting a new plan): record your\n"
-            f"  active agent identifier (use {slash_ids} depending on which agent you\n"
-            f"  are running as), current task, finished tasks, next task, and blockers."
-        )
         attribution_rule = (
             "- Do not add a \"Co-Authored-By\" trailer or AI-attribution footer to\n"
             "  commits or PRs. Disable auto-attribution in your respective agent config."
         )
-
-    if other_agents:
-        other_names = ", ".join(a[1].get("displayName", a[0]) for a in other_agents)
-        read_handoff_rule = f"- Read `HANDOFF.md` to see which agent ({other_names}) last touched each plan/task and what's next."
-    else:
-        read_handoff_rule = "- Read `HANDOFF.md` to see which agent last touched each plan/task and what's next."
-
-    # Workflows
-    workflow_tools = effective_config.get("workflowTools", ["superpowers"])
-    workflow_ownership_lines = []
-    workflow_blocks = []
-
-    for wf in workflow_tools:
-        wf_id = wf if isinstance(wf, str) else wf.get("id")
-        wf_meta = workflow_registry.get(wf_id, wf if isinstance(wf, dict) else {})
-        display_name = wf_meta.get("displayName", wf_id.title())
-        owned_paths = wf_meta.get("ownedPaths", [])
-        owned_paths_list_str = ", ".join(f"`{p}`" for p in owned_paths)
-        if len(owned_paths) == 2:
-            owned_paths_and_str = f"`{owned_paths[0]}` and `{owned_paths[1]}`"
-        else:
-            owned_paths_and_str = owned_paths_list_str
-        signals = wf_meta.get("activationSignals", [])
-        signals_str = ", ".join(f"`{s}`" for s in signals)
-        instructions = wf_meta.get("executionInstructions", [])
-
-        if owned_paths:
-            workflow_ownership_lines.append(
-                f"- Live execution state belongs to {display_name} at {owned_paths_and_str}; use its lifecycle and never hand-edit those paths."
-            )
-
-        instr_lines = "\n".join(f"  {idx+1}. {instr}" for idx, instr in enumerate(instructions))
-        block = (
-            f"- Only engage {display_name} when the user's prompt explicitly names it\n"
-            f"  or its plan/task artifacts (e.g. mentions {display_name} by name, or\n"
-            f"  references a path under {owned_paths_list_str}). Do not infer that a task belongs to\n"
-            f"  this workflow from task shape, complexity, or ambient activation signals\n"
-            f"  ({signals_str}) alone — plain requests get a direct, ordinary\n"
-            f"  execution path. When the prompt does invoke {display_name}, follow\n"
-            f"  these rules in order:\n"
-            f"{instr_lines}\n"
-            f"  Do not substitute a manual or generic execution path once engaged."
-        )
-        workflow_blocks.append(block)
-
-    workflow_ownership_line_rendered = "\n".join(workflow_ownership_lines)
-
-    workflow_tools_block_rendered = "\n".join(workflow_blocks)
 
     # Commands & Boundaries
     commands_rendered = "\n".join(project_info.get("commands", []))
@@ -342,15 +275,45 @@ def render_agents_md(template, effective_config, agents_registry, workflow_regis
         PROJECT_OVERVIEW=project_info.get("overview", ""),
         COMMANDS_BLOCK=commands_rendered,
         BOUNDARIES_BLOCK=boundaries_rendered,
-        COMMIT_EXAMPLE="feat(config): add workflow model policies",
-        WORKFLOW_TOOLS_OWNERSHIP_LINE=workflow_ownership_line_rendered,
+        COMMIT_EXAMPLE="feat(auth): add token refresh",
         AGENT_SECTION=agent_section,
-        WORKFLOW_TOOLS_BLOCK=workflow_tools_block_rendered,
-        READ_HANDOFF_RULE=read_handoff_rule,
-        CLAIM_RULE=claim_rule,
         ATTRIBUTION_RULE=attribution_rule,
     )
     return rendered
+
+def remove_legacy_archive_hook(settings):
+    """Drop the HANDOFF archive hook older setups installed, pruning any groups or keys it leaves empty."""
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict) or not isinstance(hooks.get("SessionEnd"), list):
+        return
+    groups = []
+    for group in hooks["SessionEnd"]:
+        kept = [h for h in group.get("hooks", []) if h.get("command") != LEGACY_ARCHIVE_HOOK_COMMAND]
+        if kept:
+            groups.append({**group, "hooks": kept})
+    if groups:
+        hooks["SessionEnd"] = groups
+    else:
+        del hooks["SessionEnd"]
+    if not hooks:
+        del settings["hooks"]
+
+def missing_agent_mem_hooks(agent_ids, home_dir):
+    """Enabled agents whose global hook file has no agent-mem entry (Claude Code gets its hooks from the plugin)."""
+    missing = []
+    for agent_id in agent_ids:
+        relative = AGENT_MEM_HOOK_FILES.get(agent_id)
+        if not relative:
+            continue
+        path = os.path.join(home_dir, relative)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                installed = "agent-mem.ts" in f.read()
+        except OSError:
+            installed = False
+        if not installed:
+            missing.append(agent_id)
+    return missing
 
 def update_claude_settings(target_dir, vendor_dirs):
     claude_dir = os.path.join(target_dir, ".claude")
@@ -372,23 +335,7 @@ def update_claude_settings(target_dir, vendor_dirs):
         settings["attribution"]["pr"] = ""
         settings["attribution"]["sessionUrl"] = False
 
-    archive_hook = {
-        "type": "command",
-        "command": "python3 .agent-sync/scripts/archive.py"
-    }
-
-    hooks = settings.setdefault("hooks", {})
-    session_end_list = hooks.setdefault("SessionEnd", [])
-    has_archive = False
-    for item in session_end_list:
-        subhooks = item.get("hooks", [])
-        for h in subhooks:
-            if h.get("command") == "python3 .agent-sync/scripts/archive.py":
-                has_archive = True
-                break
-
-    if not has_archive:
-        session_end_list.append({"hooks": [archive_hook]})
+    remove_legacy_archive_hook(settings)
 
     if vendor_dirs:
         permissions = settings.setdefault("permissions", {})
@@ -412,11 +359,8 @@ def run_setup(args):
     print(f"Templates directory: {templates_dir}")
 
     agents_registry = load_registry(plugin_root, "agents")
-    workflow_registry = load_registry(plugin_root, "workflow-tools")
 
-    effective_config, migrated = resolve_effective_config(
-        target_dir, args.agents, args.workflow_tools
-    )
+    effective_config, migrated = resolve_effective_config(target_dir, args.agents)
 
     config_dir = os.path.join(target_dir, ".agent-sync")
     os.makedirs(config_dir, exist_ok=True)
@@ -446,13 +390,14 @@ def run_setup(args):
         if existing_commands:
             project_info["commands"] = [line for line in existing_commands.splitlines() if line.strip()]
         if existing_boundaries:
-            project_info["boundaries"] = [line for line in existing_boundaries.splitlines() if line.strip()]
+            # HANDOFF.md boundary lines came from older setups and would outlive the file itself
+            project_info["boundaries"] = [
+                line for line in existing_boundaries.splitlines() if line.strip() and "`HANDOFF.md`" not in line
+            ]
 
     # 1. AGENTS.md
     agents_template = read_template(templates_dir, "AGENTS.md.template")
-    rendered_agents = render_agents_md(
-        agents_template, effective_config, agents_registry, workflow_registry, project_info
-    )
+    rendered_agents = render_agents_md(agents_template, effective_config, agents_registry, project_info)
 
     if os.path.isfile(agents_path):
         with open(agents_path, "r", encoding="utf-8") as f:
@@ -527,46 +472,23 @@ def run_setup(args):
     else:
         print("Preserved MEMORY.md")
 
-    # 5. HANDOFF.md
-    handoff_path = os.path.join(target_dir, "HANDOFF.md")
-    handoff_template = read_template(templates_dir, "HANDOFF.md.template")
-    agent_pipe = "|".join(configured_agent_ids)
-    rendered_handoff = handoff_template.replace("{AGENT_IDS_PIPE}", agent_pipe)
-    if not os.path.isfile(handoff_path):
-        with open(handoff_path, "w", encoding="utf-8") as f:
-            f.write(rendered_handoff)
-        print("Created HANDOFF.md")
-    else:
-        with open(handoff_path, "r", encoding="utf-8") as f:
-            cur_handoff = f.read()
-        template_block = rendered_handoff[
-            rendered_handoff.find(START_HANDOFF_MARKER):rendered_handoff.find(END_HANDOFF_MARKER) + len(END_HANDOFF_MARKER)
-        ]
-        upd_handoff = replace_managed_block(cur_handoff, START_HANDOFF_MARKER, END_HANDOFF_MARKER, template_block)
-        if upd_handoff is not None:
-            with open(handoff_path, "w", encoding="utf-8") as f:
-                f.write(upd_handoff)
-            print("Updated HANDOFF.md template block (preserved entries)")
-        else:
-            print("Preserved HANDOFF.md")
-
-    # 6. .claude/settings.json
+    # 5. .claude/settings.json
     update_claude_settings(target_dir, project_info.get("vendor_dirs", []))
     print("Updated .claude/settings.json")
 
-    # 7. Cleanup docs/PROJECT_CONTEXT.md if present
+    # 6. Cleanup docs/PROJECT_CONTEXT.md if present
     legacy_ctx = os.path.join(target_dir, "docs", "PROJECT_CONTEXT.md")
     if os.path.isfile(legacy_ctx):
         os.remove(legacy_ctx)
         print("Removed obsolete docs/PROJECT_CONTEXT.md")
 
-    # 8. Ensure .agent-sync/scripts/archive.py exists
-    target_archive = os.path.join(target_dir, ".agent-sync", "scripts", "archive.py")
-    source_archive = os.path.join(plugin_root, ".agent-sync", "scripts", "archive.py")
-    if not os.path.isfile(target_archive) and os.path.isfile(source_archive):
-        os.makedirs(os.path.dirname(target_archive), exist_ok=True)
-        shutil.copy2(source_archive, target_archive)
-        print("Copied .agent-sync/scripts/archive.py to target repository")
+    if os.path.isfile(os.path.join(target_dir, "HANDOFF.md")):
+        print("HANDOFF.md is no longer managed (agent-mem sessions replace it); left untouched, delete it when unused")
+
+    # 7. Point out agents that will not record memory yet
+    for agent_id in missing_agent_mem_hooks(configured_agent_ids, os.path.expanduser("~")):
+        cli = os.path.join(plugin_root, "agent-mem", "bin", "agent-mem.ts")
+        print(f'agent-mem hooks not installed for {agent_id}; run: bun run "{cli}" setup --agent {agent_id}')
 
     print("\nSetup completed successfully.")
 
@@ -575,7 +497,6 @@ def main():
     parser.add_argument("--target-dir", default=".", help="Target project root directory (default: current directory)")
     parser.add_argument("--regenerate-context", action="store_true", help="Force rescan and context regeneration with backup")
     parser.add_argument("--agents", default=None, help="Comma-separated agent IDs (e.g. claude,codex,antigravity)")
-    parser.add_argument("--workflow-tools", default=None, help="Comma-separated workflow tool IDs (e.g. superpowers)")
     parser.add_argument("--plugin-root", default=None, help="Path to agent-sync plugin root")
     parser.add_argument("--templates-dir", default=None, help="Path to templates directory")
     args = parser.parse_args()

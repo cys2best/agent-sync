@@ -9,11 +9,14 @@ import json
 class TestSetupScript(unittest.TestCase):
     def setUp(self):
         self.test_dir = tempfile.mkdtemp()
+        # Isolated HOME so agent-mem hook detection never reads the real ~/.codex or ~/.gemini
+        self.home_dir = tempfile.mkdtemp()
         self.script_path = os.path.abspath("skills/setup/scripts/setup.py")
         self.plugin_root = os.path.abspath(".")
 
     def tearDown(self):
         shutil.rmtree(self.test_dir)
+        shutil.rmtree(self.home_dir)
 
     def run_setup(self, *extra_args):
         cmd = [
@@ -21,10 +24,18 @@ class TestSetupScript(unittest.TestCase):
             "--target-dir", self.test_dir,
             "--plugin-root", self.plugin_root,
         ] + list(extra_args)
-        return subprocess.run(cmd, capture_output=True, text=True)
+        env = {**os.environ, "HOME": self.home_dir}
+        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    def write_json(self, relative_path, data, base=None):
+        path = os.path.join(base or self.test_dir, relative_path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump(data, f)
+        return path
 
     def test_first_run_scaffolds_all_files(self):
-        res = self.run_setup("--agents", "claude,codex,antigravity", "--workflow-tools", "superpowers")
+        res = self.run_setup("--agents", "claude,codex,antigravity")
         self.assertEqual(res.returncode, 0, msg=f"Setup failed: {res.stderr}\n{res.stdout}")
 
         # Check .agent-sync/config.json
@@ -32,8 +43,7 @@ class TestSetupScript(unittest.TestCase):
         self.assertTrue(os.path.isfile(config_file))
         with open(config_file, "r") as f:
             cfg = json.load(f)
-        self.assertEqual(cfg.get("agents"), ["claude", "codex", "antigravity"])
-        self.assertEqual(cfg.get("workflowTools"), ["superpowers"])
+        self.assertEqual(cfg, {"agents": ["claude", "codex", "antigravity"]})
 
         # Check AGENTS.md
         agents_file = os.path.join(self.test_dir, "AGENTS.md")
@@ -43,8 +53,13 @@ class TestSetupScript(unittest.TestCase):
         self.assertIn("<!-- agent-sync:agent-policy:start -->", agents_text)
         self.assertIn("<!-- agent-sync:agent-policy:end -->", agents_text)
         self.assertIn("COMMIT_CONVENTION.md", agents_text)
-        self.assertIn("Superpowers", agents_text)
         self.assertIn("Claude Code, Codex, Antigravity", agents_text)
+        # agent-mem replaces the HANDOFF ledger and per-tool workflow policy
+        self.assertIn("/agent-sync:resume", agents_text)
+        self.assertIn("/agent-sync:mem-search", agents_text)
+        self.assertIn("never hand-edit its state files", agents_text)
+        self.assertNotIn("HANDOFF", agents_text)
+        self.assertNotIn("Only engage", agents_text)
 
         # Check CLAUDE.md
         claude_file = os.path.join(self.test_dir, "CLAUDE.md")
@@ -67,12 +82,7 @@ class TestSetupScript(unittest.TestCase):
             mem_text = f.read()
         self.assertIn("<!-- agent-sync:memory:start -->", mem_text)
 
-        # Check HANDOFF.md
-        handoff_file = os.path.join(self.test_dir, "HANDOFF.md")
-        self.assertTrue(os.path.isfile(handoff_file))
-        with open(handoff_file, "r") as f:
-            handoff_text = f.read()
-        self.assertIn("<!-- agent-sync:handoff-template:start -->", handoff_text)
+        self.assertFalse(os.path.exists(os.path.join(self.test_dir, "HANDOFF.md")))
 
         # Check .claude/settings.json
         settings_file = os.path.join(self.test_dir, ".claude", "settings.json")
@@ -80,10 +90,8 @@ class TestSetupScript(unittest.TestCase):
         with open(settings_file, "r") as f:
             settings = json.load(f)
         self.assertEqual(settings.get("attribution", {}).get("commit"), "")
-
-        # Check archive.py copied
-        archive_script = os.path.join(self.test_dir, ".agent-sync", "scripts", "archive.py")
-        self.assertTrue(os.path.isfile(archive_script))
+        self.assertNotIn("hooks", settings)
+        self.assertFalse(os.path.exists(os.path.join(self.test_dir, ".agent-sync", "scripts", "archive.py")))
 
     def test_marker_preservation_on_existing_files(self):
         # Create an existing AGENTS.md with content outside markers
@@ -126,11 +134,65 @@ class TestSetupScript(unittest.TestCase):
         self.assertTrue(updated_agents.endswith("Post-existing text after managed block.\n"))
         self.assertIn("This file contains shared project knowledge", updated_agents)
 
+        # HANDOFF.md is no longer managed: left byte-for-byte for the user to keep or delete
         with open(handoff_file, "r") as f:
-            updated_handoff = f.read()
+            self.assertEqual(f.read(), handoff_initial)
 
-        self.assertIn("### 2026-09-01 10:00 — claude", updated_handoff)
-        self.assertIn("- Claiming: my-plan/task-1", updated_handoff)
+    def test_rerun_drops_workflow_config_and_archive_hook(self):
+        self.write_json(".agent-sync/config.json", {"agents": ["claude"], "workflowTools": ["superpowers"]})
+        other_hook = {"type": "command", "command": "echo keep-me"}
+        archive_hook = {"type": "command", "command": "python3 .agent-sync/scripts/archive.py"}
+        self.write_json(".claude/settings.json", {"hooks": {"SessionEnd": [{"hooks": [other_hook, archive_hook]}]}})
+
+        res = self.run_setup()
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+
+        with open(os.path.join(self.test_dir, ".agent-sync", "config.json")) as f:
+            self.assertEqual(json.load(f), {"agents": ["claude"]})
+        with open(os.path.join(self.test_dir, ".claude", "settings.json")) as f:
+            settings = json.load(f)
+        self.assertEqual(settings["hooks"], {"SessionEnd": [{"hooks": [other_hook]}]})
+
+    def test_archive_only_session_end_hook_is_removed_entirely(self):
+        archive_hook = {"type": "command", "command": "python3 .agent-sync/scripts/archive.py"}
+        self.write_json(".claude/settings.json", {"hooks": {"SessionEnd": [{"hooks": [archive_hook]}]}})
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(os.path.join(self.test_dir, ".claude", "settings.json")) as f:
+            self.assertNotIn("hooks", json.load(f))
+
+    def test_reports_missing_agent_mem_hooks_for_codex_and_antigravity(self):
+        res = self.run_setup("--agents", "claude,codex,antigravity")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertIn("agent-mem.ts\" setup --agent codex", res.stdout)
+        self.assertIn("agent-mem.ts\" setup --agent antigravity", res.stdout)
+
+        hook = {"type": "command", "command": 'bun run "/x/agent-mem/bin/agent-mem.ts" hook session-start'}
+        self.write_json(".codex/hooks.json", {"hooks": {"SessionStart": [{"hooks": [hook]}]}}, base=self.home_dir)
+        self.write_json(".gemini/config/hooks.json", {"agent-mem": {"PreInvocation": [hook]}}, base=self.home_dir)
+        res = self.run_setup()
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertNotIn("setup --agent codex", res.stdout)
+        self.assertNotIn("setup --agent antigravity", res.stdout)
+
+    def test_rerun_drops_stale_handoff_boundary_but_keeps_custom_ones(self):
+        agents_file = os.path.join(self.test_dir, "AGENTS.md")
+        with open(agents_file, "w") as f:
+            f.write(
+                "# Agent Instructions (Claude Code)\n\n"
+                "<!-- agent-sync:agent-policy:start -->\n"
+                "## Boundaries\n\n"
+                "- `api/`: public contract; never break it.\n"
+                "- `HANDOFF.md`: task-ID ledger only; execution details remain in the workflow's own reports.\n\n"
+                "## Conventions\n"
+                "<!-- agent-sync:agent-policy:end -->\n"
+            )
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(agents_file) as f:
+            text = f.read()
+        self.assertIn("- `api/`: public contract; never break it.", text)
+        self.assertNotIn("HANDOFF", text)
 
     def test_regenerate_context_creates_backup(self):
         agents_file = os.path.join(self.test_dir, "AGENTS.md")

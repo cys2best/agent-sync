@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "agent-sync",
-      "description": "Scaffold per-agent context files, HANDOFF.md, and docs/PROJECT_CONTEXT.md so multiple coding agents share project context.",
+      "description": "Scaffold shared agent context files and cross-agent memory (agent-mem) so multiple coding agents share project context and can resume each other's sessions.",
       "source": "./",
       "category": "productivity"
     }

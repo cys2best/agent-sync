@@ -1,11 +1,23 @@
 {
   "claude": {
     "displayName": "Claude Code",
-    "contextFile": "AGENTS.md"
+    "contextFile": "AGENTS.md",
+    "codeReviewGraph": {
+      "context": ".claude/CLAUDE.md",
+      "skills": ".claude/skills",
+      "mcp": ".claude.json",
+      "mcpFormat": "json"
+    }
   },
   "codex": {
     "displayName": "Codex",
-    "contextFile": "AGENTS.md"
+    "contextFile": "AGENTS.md",
+    "codeReviewGraph": {
+      "context": ".codex/AGENTS.md",
+      "skills": ".agents/skills",
+      "mcp": ".codex/config.toml",
+      "mcpFormat": "toml"
+    }
   },
   "gemini": {
     "displayName": "Gemini",
@@ -17,7 +29,13 @@
   },
   "antigravity": {
     "displayName": "Antigravity",
-    "contextFile": "AGENTS.md"
+    "contextFile": "AGENTS.md",
+    "codeReviewGraph": {
+      "context": ".gemini/AGENTS.md",
+      "skills": ".gemini/config/skills",
+      "mcp": ".gemini/config/mcp_config.json",
+      "mcpFormat": "json"
+    }
   },
   "grok": {
     "displayName": "Grok",

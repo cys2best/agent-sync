@@ -265,5 +265,18 @@ class TestSetupScript(unittest.TestCase):
         self.assertEqual(res.returncode, 0)
         self.assertFalse(os.path.exists(obsolete_file))
 
+    def test_graph_status_through_packaged_setup_root_does_not_touch_project_or_home(self):
+        res = self.run_setup("--code-review-graph-status")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertFalse(json.loads(res.stdout)["installed"])
+        self.assertEqual(os.listdir(self.test_dir), [])
+        self.assertEqual(os.listdir(self.home_dir), [])
+
+    def test_skip_graph_preserves_existing_setup_behavior(self):
+        res = self.run_setup("--skip-code-review-graph", "--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(self.test_dir, "AGENTS.md")))
+        self.assertEqual(os.listdir(self.home_dir), [])
+
 if __name__ == "__main__":
     unittest.main()

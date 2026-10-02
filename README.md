@@ -147,6 +147,70 @@ reports that path so you can recover it. Broken markers are preserved and
 reported. The setup flag also works on repeat runs and leaves existing
 configuration choices intact.
 
+## Optional code-review-graph integration
+
+`/agent-sync:setup` offers to install
+[code-review-graph](https://github.com/tirth8205/code-review-graph) globally for enabled
+Claude Code, Codex, and Antigravity agents. Accepting installs the tested `v2.3.9`
+release, its seven upstream skills, your `CODE-REVIEW-GRAPH.template` context,
+and a global MCP server for each agent. Declining skips it.
+
+```text
+/agent-sync:setup --skip-code-review-graph
+/agent-sync:setup --upgrade-code-review-graph
+/agent-sync:setup --code-review-graph-version v2.3.9
+/agent-sync:setup --upgrade-code-review-graph --dry-run
+```
+
+Normal reruns verify the installed version locally and make no GitHub request when
+complete. Upgrades require an explicit request and use GitHub's latest stable release
+or the exact tag you specify, resolved to an immutable commit. To deliberately install
+an older release, add `--allow-downgrade` to an exact-version request. Dry runs preview
+global integration without package installation or project scaffolding.
+
+For direct shell usage from a clone:
+
+```bash
+python3 skills/setup/scripts/install_code_review_graph.py --agents claude,codex,antigravity
+python3 skills/setup/scripts/install_code_review_graph.py --upgrade --dry-run
+python3 skills/setup/scripts/install_code_review_graph.py --upgrade
+python3 skills/setup/scripts/install_code_review_graph.py --version v2.3.9 --allow-downgrade
+python3 skills/setup/scripts/install_code_review_graph.py --status
+python3 skills/setup/scripts/install_code_review_graph.py --check
+```
+
+The helper works from any current directory when invoked by its absolute path. It
+needs Python 3.10+ with `venv` and `pip`; use Python 3.11+ when Codex already has a TOML
+configuration so the helper can validate it using the standard library. Package
+dependencies are installed into a separate versioned environment.
+
+| Agent | Global context | Global skills | MCP |
+|---|---|---|---|
+| Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills` | `~/.claude.json` |
+| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` | `~/.codex/config.toml` |
+| Antigravity | `~/.gemini/AGENTS.md` | `~/.gemini/config/skills` | `~/.gemini/config/mcp_config.json` |
+
+Installed skills: `build-graph`, `explore-codebase`, `review-changes`, `review-delta`,
+`review-pr`, `debug-issue`, and `refactor-safely`. Restart your agents and run
+`build-graph` in each repository to initialize its graph. No code-review-graph hooks
+are installed; configure your multi-repo daemon separately to manage graph updates.
+
+Reruns remove unchanged hooks and the adapter recorded by the previous installer,
+with backups, while retaining unrelated hooks (including agent-mem). User-edited
+legacy hooks or adapters are preserved and reported as conflicts. When only this
+cleanup is needed, normal reruns and dry runs require no network request or package
+build; `--check` reports the legacy artifacts until cleanup is approved and applied.
+
+The installer preserves personal context and unrelated config entries, refuses malformed
+config and conflicting user-edited skills, and leaves identical files and mtimes alone.
+Changed files are backed up under `~/.agent-sync/backups/code-review-graph/`; ownership,
+release tag, commit, and hashes are recorded in `~/.agent-sync/code-review-graph.json`.
+An apply/validation failure rolls back integrations. An interrupted process leaves a
+recovery journal; the next install can restore the previous state before retrying.
+Previous package environments are retained. The stable executable is
+`~/.local/share/agent-sync/code-review-graph/bin/code-review-graph`; optionally add that
+`bin` directory to your shell's `PATH` for CLI use.
+
 ## Persistent memory (agent-mem)
 
 `agent-mem` records sessions, tool activity, and chat turns across agents into a

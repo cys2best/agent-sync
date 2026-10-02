@@ -11,6 +11,8 @@ import glob
 import json
 import os
 import re
+import subprocess
+import sys
 
 START_POLICY_MARKER = "<!-- agent-sync:agent-policy:start -->"
 END_POLICY_MARKER = "<!-- agent-sync:agent-policy:end -->"
@@ -529,9 +531,46 @@ def main():
     parser.add_argument("--agents", default=None, help="Comma-separated agent IDs (e.g. claude,codex,antigravity)")
     parser.add_argument("--plugin-root", default=None, help="Path to agent-sync plugin root")
     parser.add_argument("--templates-dir", default=None, help="Path to templates directory")
+    graph = parser.add_mutually_exclusive_group()
+    graph.add_argument("--install-code-review-graph", action="store_true", help="Offer a pinned global code-review-graph installation")
+    graph.add_argument("--upgrade-code-review-graph", action="store_true", help="Offer an upgrade to the latest stable release")
+    graph.add_argument("--code-review-graph-version", help="Offer installation of an exact stable release tag")
+    graph.add_argument("--skip-code-review-graph", action="store_true", help="Skip the optional global integration")
+    graph.add_argument("--code-review-graph-status", action="store_true", help="Read global installation status without project writes")
+    parser.add_argument("--allow-downgrade", action="store_true", help="Permit an explicitly selected older graph version")
+    parser.add_argument("--dry-run", action="store_true", help="Preview graph integration only; skip project scaffolding")
+    parser.add_argument("--yes", action="store_true", help="Apply an explicitly requested graph installation without another prompt")
     args = parser.parse_args()
 
-    run_setup(args)
+    if args.allow_downgrade and not args.code_review_graph_version:
+        parser.error("--allow-downgrade requires --code-review-graph-version")
+    if not args.dry_run and not args.code_review_graph_status:
+        run_setup(args)
+    requested = args.install_code_review_graph or args.upgrade_code_review_graph or args.code_review_graph_version
+    if not args.skip_code_review_graph and (requested or args.dry_run or args.code_review_graph_status):
+        command = [sys.executable, os.path.join(os.path.dirname(__file__), "install_code_review_graph.py")]
+        if args.code_review_graph_status:
+            command.append("--status")
+        else:
+            config, _ = resolve_effective_config(os.path.abspath(args.target_dir), args.agents)
+            registry = load_registry(args.plugin_root or find_plugin_root(), "agents")
+            supported = [a if isinstance(a, str) else a.get("id") for a in config.get("agents", [])]
+            supported = [a for a in supported if a in registry and "codeReviewGraph" in registry[a]]
+            if not supported:
+                print("No enabled agents support the code-review-graph integration.")
+                return
+            command.extend(["--agents", ",".join(supported)])
+            if args.upgrade_code_review_graph:
+                command.append("--upgrade")
+            if args.code_review_graph_version:
+                command.extend(["--version", args.code_review_graph_version])
+            for enabled, flag in ((args.allow_downgrade, "--allow-downgrade"),
+                                  (args.dry_run, "--dry-run"), (args.yes, "--yes")):
+                if enabled:
+                    command.append(flag)
+            if args.templates_dir:
+                command.extend(["--template", os.path.join(args.templates_dir, "CODE-REVIEW-GRAPH.template")])
+        sys.exit(subprocess.call(command))
 
 if __name__ == "__main__":
     main()

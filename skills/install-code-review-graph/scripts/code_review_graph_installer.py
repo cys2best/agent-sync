@@ -448,8 +448,20 @@ def plan_install(options, release):
 
     for agent in agents:
         layout = registry[agent]["codeReviewGraph"]
+        doc_relative = layout.get("doc", str(Path(layout["context"]).parent / "code-review-graph.md"))
+        path, mode = file(doc_relative, template + b"\n", 0o644)
+        modes[path] = mode
+        doc_ref = f"~/{doc_relative}"
+        mention = (
+            b"<!-- code-review-graph MCP tools -->\n"
+            b"## MCP Tools: code-review-graph\n\n"
+            b"**This project has a knowledge graph. Start with the code-review-graph\n"
+            b"MCP tools to narrow scope, then read the source.** See [code-review-graph.md]("
+            + doc_ref.encode()
+            + b") for code-review-graph MCP tools, workflows, and usage instructions."
+        )
         block(layout["context"], CONTEXT_START, CONTEXT_END,
-              CONTEXT_START + b"\n" + template + b"\n" + CONTEXT_END)
+              CONTEXT_START + b"\n" + mention + b"\n" + CONTEXT_END)
         for relative, content in source_files.items():
             source_mode = (Path(options.source_dir) / "skills" / relative).stat().st_mode
             path, mode = file(layout["skills"] + "/" + relative, content, 0o755 if source_mode & 0o111 else 0o644)
@@ -830,4 +842,13 @@ def verify_installed(home, state):
             missing.append(key)
         elif key in LEGACY_HOOK_ARTIFACTS:
             missing.append(key)  # Local daemon-only migration, not a missing release file.
+    registry = parse_json(REGISTRY.read_bytes(), REGISTRY)
+    for agent in state.get("agents", []):
+        if agent in registry and "codeReviewGraph" in registry[agent]:
+            doc = registry[agent]["codeReviewGraph"].get(
+                "doc", str(Path(registry[agent]["codeReviewGraph"]["context"]).parent / "code-review-graph.md")
+            )
+            if doc not in state["artifacts"] or not safe_path(home, doc).is_file():
+                if doc not in missing:
+                    missing.append(doc)
     return missing

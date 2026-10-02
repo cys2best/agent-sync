@@ -548,7 +548,10 @@ def main():
         run_setup(args)
     requested = args.install_code_review_graph or args.upgrade_code_review_graph or args.code_review_graph_version
     if not args.skip_code_review_graph and (requested or args.dry_run or args.code_review_graph_status):
-        command = [sys.executable, os.path.join(os.path.dirname(__file__), "install_code_review_graph.py")]
+        crg_script = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "..", "install-code-review-graph", "scripts", "install_code_review_graph.py"
+        ))
+        command = [sys.executable, crg_script]
         if args.code_review_graph_status:
             command.append("--status")
         else:
@@ -569,7 +572,9 @@ def main():
                 if enabled:
                     command.append(flag)
             if args.templates_dir:
-                command.extend(["--template", os.path.join(args.templates_dir, "CODE-REVIEW-GRAPH.template")])
+                custom_template = os.path.join(args.templates_dir, "CODE-REVIEW-GRAPH.template")
+                if os.path.exists(custom_template):
+                    command.extend(["--template", custom_template])
         sys.exit(subprocess.call(command))
 
 if __name__ == "__main__":

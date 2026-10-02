@@ -4,6 +4,7 @@
     "contextFile": "AGENTS.md",
     "codeReviewGraph": {
       "context": ".claude/CLAUDE.md",
+      "doc": ".claude/code-review-graph.md",
       "skills": ".claude/skills",
       "mcp": ".claude.json",
       "mcpFormat": "json"
@@ -14,6 +15,7 @@
     "contextFile": "AGENTS.md",
     "codeReviewGraph": {
       "context": ".codex/AGENTS.md",
+      "doc": ".codex/code-review-graph.md",
       "skills": ".agents/skills",
       "mcp": ".codex/config.toml",
       "mcpFormat": "toml"
@@ -32,6 +34,7 @@
     "contextFile": "AGENTS.md",
     "codeReviewGraph": {
       "context": ".gemini/AGENTS.md",
+      "doc": ".gemini/code-review-graph.md",
       "skills": ".gemini/config/skills",
       "mcp": ".gemini/config/mcp_config.json",
       "mcpFormat": "json"

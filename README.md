@@ -91,6 +91,17 @@ Hooks for Codex and Antigravity: `bun run <clone>/agent-mem/bin/agent-mem.ts set
 
 ## Use
 
+agent-sync provides four skills:
+
+| Skill | Command | Description |
+|---|---|---|
+| `setup` | `/agent-sync:setup` | Scaffold or update shared multi-agent project context and instructions |
+| `install-code-review-graph` | `/agent-sync:install-code-review-graph` | Install, upgrade, or inspect global code-review-graph integration |
+| `resume` | `/agent-sync:resume` | Pick up an interrupted session another agent left unfinished |
+| `mem-search` | `/agent-sync:mem-search` | Search persistent cross-agent project memory in agent-mem |
+
+### Initial project setup
+
 In any project, run:
 
 ```
@@ -149,17 +160,16 @@ configuration choices intact.
 
 ## Optional code-review-graph integration
 
-`/agent-sync:setup` offers to install
-[code-review-graph](https://github.com/tirth8205/code-review-graph) globally for enabled
-Claude Code, Codex, and Antigravity agents. Accepting installs the tested `v2.3.9`
-release, its seven upstream skills, your `CODE-REVIEW-GRAPH.template` context,
-and a global MCP server for each agent. Declining skips it.
+Global [code-review-graph](https://github.com/tirth8205/code-review-graph) management is
+provided by the dedicated `/agent-sync:install-code-review-graph` skill, and `/agent-sync:setup` offers to invoke it during initial setup for enabled Claude Code, Codex, and Antigravity agents.
+
+Accepting installs the tested `v2.3.9` release, its seven upstream skills, a dedicated `code-review-graph.md` documentation file, a concise reference link in each agent's global context file, and a global MCP server. Rather than inlining the entire 46-line instruction block directly into `CLAUDE.md` or `AGENTS.md` (which bloats context on every turn), the installer writes full documentation to `code-review-graph.md` and mentions it with a markdown reference link. Declining skips it.
 
 ```text
-/agent-sync:setup --skip-code-review-graph
-/agent-sync:setup --upgrade-code-review-graph
-/agent-sync:setup --code-review-graph-version v2.3.9
-/agent-sync:setup --upgrade-code-review-graph --dry-run
+/agent-sync:install-code-review-graph
+/agent-sync:install-code-review-graph --upgrade
+/agent-sync:install-code-review-graph --version v2.3.9
+/agent-sync:install-code-review-graph --upgrade --dry-run
 ```
 
 Normal reruns verify the installed version locally and make no GitHub request when
@@ -171,12 +181,12 @@ global integration without package installation or project scaffolding.
 For direct shell usage from a clone:
 
 ```bash
-python3 skills/setup/scripts/install_code_review_graph.py --agents claude,codex,antigravity
-python3 skills/setup/scripts/install_code_review_graph.py --upgrade --dry-run
-python3 skills/setup/scripts/install_code_review_graph.py --upgrade
-python3 skills/setup/scripts/install_code_review_graph.py --version v2.3.9 --allow-downgrade
-python3 skills/setup/scripts/install_code_review_graph.py --status
-python3 skills/setup/scripts/install_code_review_graph.py --check
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --agents claude,codex,antigravity
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --upgrade --dry-run
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --upgrade
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --version v2.3.9 --allow-downgrade
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --status
+python3 skills/install-code-review-graph/scripts/install_code_review_graph.py --check
 ```
 
 The helper works from any current directory when invoked by its absolute path. It
@@ -184,11 +194,11 @@ needs Python 3.10+ with `venv` and `pip`; use Python 3.11+ when Codex already ha
 configuration so the helper can validate it using the standard library. Package
 dependencies are installed into a separate versioned environment.
 
-| Agent | Global context | Global skills | MCP |
-|---|---|---|---|
-| Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills` | `~/.claude.json` |
-| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` | `~/.codex/config.toml` |
-| Antigravity | `~/.gemini/AGENTS.md` | `~/.gemini/config/skills` | `~/.gemini/config/mcp_config.json` |
+| Agent | Global context | Documentation | Global skills | MCP |
+|---|---|---|---|---|
+| Claude Code | `~/.claude/CLAUDE.md` (mention) | `~/.claude/code-review-graph.md` | `~/.claude/skills` | `~/.claude.json` |
+| Codex | `~/.codex/AGENTS.md` (mention) | `~/.codex/code-review-graph.md` | `~/.agents/skills` | `~/.codex/config.toml` |
+| Antigravity | `~/.gemini/AGENTS.md` (mention) | `~/.gemini/code-review-graph.md` | `~/.gemini/config/skills` | `~/.gemini/config/mcp_config.json` |
 
 Installed skills: `build-graph`, `explore-codebase`, `review-changes`, `review-delta`,
 `review-pr`, `debug-issue`, and `refactor-safely`. Restart your agents and run

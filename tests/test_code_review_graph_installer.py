@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills/setup/scripts"
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "skills/install-code-review-graph/scripts"
 SKILLS = ("build-graph", "debug-issue", "explore-codebase", "refactor-safely",
           "review-changes", "review-delta", "review-pr")
 
@@ -112,7 +112,11 @@ class TestGlobalInstall(unittest.TestCase):
                 self.assertEqual((self.home / skills_dir / name / "SKILL.md").read_bytes(),
                                  (self.source / "skills" / name / "SKILL.md").read_bytes())
         for relative in (".claude/CLAUDE.md", ".codex/AGENTS.md", ".gemini/AGENTS.md"):
-            self.assertIn(b"Graph instructions\r\n", (self.home / relative).read_bytes())
+            content = (self.home / relative).read_bytes()
+            self.assertIn(b"code-review-graph.md", content)
+            self.assertNotIn(b"Graph instructions", content)
+        for doc in (".claude/code-review-graph.md", ".codex/code-review-graph.md", ".gemini/code-review-graph.md"):
+            self.assertEqual((self.home / doc).read_bytes(), b"Graph instructions\r\nVerify source.\n")
         for relative in (".claude/settings.json", ".codex/hooks.json", ".gemini/config/hooks.json",
                          ".local/share/agent-sync/code-review-graph/hook.py"):
             self.assertFalse((self.home / relative).exists(), relative)
@@ -615,6 +619,23 @@ installer.apply_install(plan)
             engine.apply_install(self.plan(engine), validator=lambda: (_ for _ in ()).throw(
                 engine.InstallError("validation failed")))
         self.assertEqual(wrapper.stat().st_mode & 0o777, 0o600)
+
+    def test_user_edited_doc_file_is_preserved_as_conflict(self):
+        engine = self.engine()
+        engine.apply_install(self.plan(engine))
+        (self.home / ".claude/code-review-graph.md").write_text("User custom graph docs")
+        with self.assertRaisesRegex(engine.InstallError, "Ownership conflict: user modified .claude/code-review-graph.md"):
+            self.plan(engine)
+        self.assertEqual((self.home / ".claude/code-review-graph.md").read_text(), "User custom graph docs")
+
+    def test_missing_doc_file_is_reported_for_repair(self):
+        engine = self.engine()
+        engine.apply_install(self.plan(engine))
+        (self.home / ".claude/code-review-graph.md").unlink()
+        missing = engine.verify_installed(self.home, engine.load_state(self.home))
+        self.assertIn(".claude/code-review-graph.md", missing)
+        engine.apply_install(self.plan(engine))
+        self.assertTrue((self.home / ".claude/code-review-graph.md").is_file())
 
 
 if __name__ == "__main__":

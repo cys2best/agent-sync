@@ -2,7 +2,7 @@
 import { createMemoryServer } from "../src/daemon/server";
 import { extractEditedFiles, parseTranscript, resolveAgentTitle, summarizeSession } from "../src/context/transcript";
 import { grepSteps, loadHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus, stepDetail, stepsBefore } from "../src/context/handoff";
-import { ensureDaemonRunning } from "../src/daemon/lifecycle";
+import { ensureDaemonRunning, stopDaemon } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
 import { installAntigravityHooks, installCodexHooks } from "../src/install/hooks";
 import { AGENTS, runInstall } from "../src/install/install";
@@ -465,7 +465,7 @@ if (command === "daemon") {
     const hook = (sub: string) => [{ hooks: [{ type: "command", command: `bun run ${binPath} hook ${sub}${sub === "session-start" ? " --output-format claude" : ""}` }] }];
     console.log(`Claude Code setup:`);
     console.log(`\nAdd the following to your ~/.claude/settings.json or project .claude/settings.json:\n`);
-    console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript") } }, null, 2));
+    console.log(JSON.stringify({ hooks: { SessionStart: hook("session-start"), Stop: hook("transcript"), SessionEnd: hook("transcript") } }, null, 2));
   } else if (agentType === "codex") {
     if (scope !== "global" && scope !== "project") {
       console.error(`Unknown scope: ${scope}. Use 'global' or 'project'.`);
@@ -489,6 +489,9 @@ if (command === "daemon") {
   if (only && !AGENTS.includes(only)) {
     console.error(`Unknown agent: ${only}. Supported: ${AGENTS.join(", ")}`);
     process.exit(1);
+  }
+  if (!args.includes("--dry-run")) {
+    await stopDaemon();
   }
   const results = runInstall({
     root: realpathSync(resolve(import.meta.dir, "../..")),

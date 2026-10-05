@@ -15,7 +15,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook transcript"
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook transcript --agent claude"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun run \"${CLAUDE_PLUGIN_ROOT}/agent-mem/bin/agent-mem.ts\" hook transcript --agent claude"
           }
         ]
       }

@@ -36,10 +36,15 @@ export function generateCompactDigest(
   currentSessionId?: string
 ): string {
   const config = getConfig();
-  // The session being started has nothing to report yet; list only past sessions
-  const sessions = getRecentSessions(db, projectId, config.maxRecentSessionsInDigest + 1)
-    .filter((s) => s.id !== currentSessionId)
-    .slice(0, config.maxRecentSessionsInDigest);
+  // The session being started has nothing to report yet; list past sessions, prioritizing ones with recorded summaries/titles
+  const rawSessions = getRecentSessions(db, projectId, 10).filter((s) => s.id !== currentSessionId);
+  const sorted = [...rawSessions].sort((a, b) => {
+    const aHas = Boolean(a.summary || a.title);
+    const bHas = Boolean(b.summary || b.title);
+    if (aHas === bHas) return b.startedAt - a.startedAt;
+    return aHas ? -1 : 1;
+  });
+  const sessions = sorted.slice(0, config.maxRecentSessionsInDigest);
   const observations = getRecentObservations(db, projectId, 5);
 
   const base = webViewerUrl.replace(/\/+$/, "");

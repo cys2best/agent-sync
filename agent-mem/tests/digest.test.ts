@@ -160,4 +160,31 @@ describe("compact digest generator", () => {
     expect(digest).toContain("[ses_a]");
     expect(digest).toContain("[ses_c]");
   });
+
+  it("prioritizes sessions with summary or title ahead of empty stubs", () => {
+    // Insert an older meaningful session
+    insertSession(db, {
+      id: "ses_meaningful",
+      projectId: "proj_demo",
+      agentType: "claude",
+      title: "Implement feature X",
+      summary: "Implement feature X · edited file.ts",
+      startedAt: Date.now() - 3600000,
+      status: "completed",
+    });
+    // Insert 3 newer empty stubs (e.g. rate limit queries or cancelled sessions)
+    for (let i = 1; i <= 3; i++) {
+      insertSession(db, {
+        id: `ses_stub_${i}`,
+        projectId: "proj_demo",
+        agentType: "claude",
+        startedAt: Date.now() - i * 60000,
+        status: "active",
+      });
+    }
+
+    const digest = generateCompactDigest(db, "proj_demo", "superpower-dual-agents");
+    expect(digest).toContain("[ses_meaningful]");
+    expect(digest).toContain("Implement feature X");
+  });
 });

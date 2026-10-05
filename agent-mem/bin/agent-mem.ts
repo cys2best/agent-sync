@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { createMemoryServer } from "../src/daemon/server";
-import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
+import { extractEditedFiles, parseTranscript, resolveAgentTitle, summarizeSession } from "../src/context/transcript";
 import { grepSteps, loadHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus, stepDetail, stepsBefore } from "../src/context/handoff";
 import { ensureDaemonRunning } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
@@ -233,13 +233,18 @@ if (command === "daemon") {
 
     let messages: ReturnType<typeof parseTranscript> = [];
     let editedFiles: string[] = [];
+    let agentTitle: string | undefined;
     if (transcriptPath) {
       const source = resolveTranscriptSource(transcriptPath);
       if (existsSync(source)) {
         const jsonl = readFileSync(source, "utf-8");
         messages = parseTranscript(jsonl);
         editedFiles = extractEditedFiles(jsonl);
+        agentTitle = resolveAgentTitle(agentType, sessionId, jsonl);
       }
+    }
+    if (!agentTitle && sessionId) {
+      agentTitle = resolveAgentTitle(agentType, sessionId);
     }
 
     let recorded = 0;
@@ -254,7 +259,8 @@ if (command === "daemon") {
           sessionId,
           agentType,
           transcriptPath,
-          summary: summarizeSession(messages, editedFiles),
+          title: agentTitle,
+          summary: summarizeSession(messages, editedFiles, agentTitle),
           messages,
         }),
       });

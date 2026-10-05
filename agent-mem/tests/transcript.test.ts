@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
+import { extractAgentTitle, extractEditedFiles, parseTranscript, summarizeSession } from "../src/context/transcript";
 
 const lines = (rows: object[]) => rows.map((r) => JSON.stringify(r)).join("\n");
 
@@ -169,4 +169,39 @@ describe("summarizeSession", () => {
   it("returns undefined when there is nothing to summarize", () => {
     expect(summarizeSession([], [])).toBeUndefined();
   });
+
+  it("prioritizes agentTitle over the first user prompt", () => {
+    const summary = summarizeSession(
+      [user("help me please"), user("also do this")],
+      ["/repo/src/auth.ts"],
+      "Authentication Token Refresh"
+    );
+    expect(summary).toBe("Authentication Token Refresh · edited auth.ts");
+  });
+
+  it("clips long agentTitle to 80 chars", () => {
+    const longTitle = "A".repeat(100);
+    const summary = summarizeSession([], [], longTitle);
+    expect(summary!.length).toBeLessThanOrEqual(80);
+    expect(summary).toBe("A".repeat(77) + "...");
+  });
 });
+
+describe("extractAgentTitle", () => {
+  it("extracts the latest ai-title from a Claude Code transcript", () => {
+    const text = lines([
+      { type: "ai-title", aiTitle: "Initial title", sessionId: "ses1" },
+      { type: "user", message: { content: "do something else" }, uuid: "u1" },
+      { type: "ai-title", aiTitle: "Refined Task Title", sessionId: "ses1" },
+    ]);
+    expect(extractAgentTitle(text)).toBe("Refined Task Title");
+  });
+
+  it("returns undefined when no ai-title exists", () => {
+    const text = lines([
+      { type: "user", message: { content: "hello" }, uuid: "u1" },
+    ]);
+    expect(extractAgentTitle(text)).toBeUndefined();
+  });
+});
+

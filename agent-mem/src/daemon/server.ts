@@ -206,18 +206,25 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
             rootPath: body.rootPath || process.cwd(),
           });
           const existingSession = db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId);
+          const sessionTitle = typeof body.title === "string" && body.title.trim() ? body.title.trim() : undefined;
           if (!existingSession) {
             insertSession(db, {
               id: sessionId,
               projectId,
               agentType: body.agentType || "unknown",
+              title: sessionTitle,
               startedAt: Date.now(),
               status: "active",
             });
           }
 
-          if ((typeof body.summary === "string" && body.summary) || body.transcriptPath) {
-            updateSession(db, sessionId, { summary: body.summary || undefined, transcriptPath: body.transcriptPath });
+          if ((typeof body.summary === "string" && body.summary) || body.transcriptPath || sessionTitle) {
+            updateSession(db, sessionId, {
+              title: sessionTitle,
+              summary: body.summary || undefined,
+              transcriptPath: body.transcriptPath,
+            });
+            sseHub.broadcast("session_update", { sessionId, projectId, agentType: body.agentType, title: sessionTitle, summary: body.summary });
           }
 
           let recorded = 0;

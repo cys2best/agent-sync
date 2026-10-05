@@ -47,6 +47,16 @@
         </dl>
       </div>
 
+      <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-800 space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Recent Sessions</h3>
+          <span id="sessionsCount" class="text-xs text-slate-500 font-mono">0</span>
+        </div>
+        <div id="sessionsFeed" class="space-y-2.5 max-h-[30rem] overflow-y-auto pr-1">
+          <div class="text-xs text-slate-500 italic text-center py-4">No recent sessions found</div>
+        </div>
+      </div>
+
       <div id="drawer" class="hidden bg-slate-900 p-5 rounded-xl border border-slate-700 shadow-xl sticky top-24">
         <div class="flex justify-between items-center mb-3">
           <h4 id="drawerTitle" class="text-sm font-bold text-slate-200 truncate pr-2">Citation Details</h4>
@@ -68,6 +78,8 @@
     const projectSelect = document.getElementById("projectSelect");
     const feedTitle = document.getElementById("feedTitle");
     const feedCount = document.getElementById("feedCount");
+    const sessionsFeed = document.getElementById("sessionsFeed");
+    const sessionsCount = document.getElementById("sessionsCount");
 
     let currentProject = "";
     let searchTimeout = null;
@@ -83,9 +95,27 @@
       return `${Math.floor(diffHours / 24)}d ago`;
     }
 
+    function getObservationStyle(type) {
+      if (!type) return { border: "border-l-4 border-l-slate-700", badge: "bg-slate-800 text-slate-300 border-slate-700" };
+      if (type === "user_prompt") {
+        return { border: "border-l-4 border-l-sky-500", badge: "bg-sky-500/20 text-sky-300 border-sky-500/40" };
+      }
+      if (type === "assistant_reply") {
+        return { border: "border-l-4 border-l-purple-500", badge: "bg-purple-500/20 text-purple-300 border-purple-500/40" };
+      }
+      if (type.includes("edit") || type.includes("write") || type.includes("patch") || type.includes("replace")) {
+        return { border: "border-l-4 border-l-emerald-500", badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40" };
+      }
+      if (type.includes("command") || type.includes("bash") || type.includes("exec")) {
+        return { border: "border-l-4 border-l-amber-500", badge: "bg-amber-500/20 text-amber-300 border-amber-500/40" };
+      }
+      return { border: "border-l-4 border-l-indigo-500/70", badge: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" };
+    }
+
     function createObservationCard(data) {
       const card = document.createElement("div");
-      card.className = "p-4 bg-slate-900/90 border border-slate-800 rounded-lg hover:border-slate-700 transition cursor-pointer hover:bg-slate-900";
+      const style = getObservationStyle(data.type);
+      card.className = `p-4 bg-slate-900/90 border border-slate-800 rounded-lg hover:border-slate-700 transition cursor-pointer hover:bg-slate-900 shadow-sm ${style.border}`;
       card.onclick = () => openDrawer(data);
 
       const header = document.createElement("div");
@@ -99,7 +129,7 @@
       idSpan.textContent = `[${data.id}]`;
 
       const typeBadge = document.createElement("span");
-      typeBadge.className = "text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700";
+      typeBadge.className = `text-[10px] font-mono px-1.5 py-0.5 rounded border ${style.badge}`;
       typeBadge.textContent = data.type || "observation";
 
       left.appendChild(idSpan);
@@ -122,12 +152,128 @@
       header.appendChild(right);
 
       const summaryP = document.createElement("p");
-      summaryP.className = "text-sm text-slate-200";
+      summaryP.className = "text-sm text-slate-200 leading-snug";
       summaryP.textContent = data.summary || "No summary";
 
       card.appendChild(header);
       card.appendChild(summaryP);
       return card;
+    }
+
+    function createSessionSummaryCard(session) {
+      const card = document.createElement("div");
+      const agentStyles = {
+        claude: {
+          border: "border-l-4 border-l-amber-500 border-slate-800 bg-gradient-to-r from-amber-500/10 via-slate-900/90 to-slate-900 hover:border-amber-500/60",
+          badge: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+          name: "Claude Code",
+        },
+        antigravity: {
+          border: "border-l-4 border-l-indigo-500 border-slate-800 bg-gradient-to-r from-indigo-500/10 via-slate-900/90 to-slate-900 hover:border-indigo-500/60",
+          badge: "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
+          name: "Antigravity",
+        },
+        codex: {
+          border: "border-l-4 border-l-emerald-500 border-slate-800 bg-gradient-to-r from-emerald-500/10 via-slate-900/90 to-slate-900 hover:border-emerald-500/60",
+          badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+          name: "Codex",
+        },
+      };
+
+      const style = agentStyles[session.agentType?.toLowerCase()] || {
+        border: "border-l-4 border-l-sky-500 border-slate-800 bg-gradient-to-r from-sky-500/10 via-slate-900/90 to-slate-900 hover:border-sky-500/60",
+        badge: "bg-sky-500/20 text-sky-300 border-sky-500/40",
+        name: session.agentType || "Agent",
+      };
+
+      card.className = `group p-3 rounded-lg border transition-all cursor-pointer shadow-sm hover:shadow-md ${style.border}`;
+      card.onclick = () => openSessionDrawer(session);
+
+      // Header row with agent pill & timestamp
+      const header = document.createElement("div");
+      header.className = "flex justify-between items-center mb-1.5";
+
+      const left = document.createElement("div");
+      left.className = "flex items-center gap-2";
+
+      const badge = document.createElement("span");
+      badge.className = `text-[10px] font-mono font-medium px-2 py-0.5 rounded-full border ${style.badge}`;
+      badge.textContent = style.name;
+      left.appendChild(badge);
+
+      if (session.status === "active") {
+        const live = document.createElement("span");
+        live.className = "inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono";
+        live.innerHTML = '<span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>live';
+        left.appendChild(live);
+      }
+
+      const timeSpan = document.createElement("span");
+      timeSpan.className = "text-[11px] text-slate-400 font-mono";
+      timeSpan.textContent = formatTime(session.startedAt);
+
+      header.appendChild(left);
+      header.appendChild(timeSpan);
+      card.appendChild(header);
+
+      // Session Title / Recap
+      const titleEl = document.createElement("h4");
+      titleEl.className = "text-sm font-semibold text-slate-100 group-hover:text-white transition leading-snug";
+      titleEl.textContent = session.title || session.summary || "Working session";
+      card.appendChild(titleEl);
+
+      // Session summary & edited file chips
+      if (session.summary) {
+        const editMatch = session.summary.match(/edited\s+([^+]+)(?:\s+\+(\d+))?/);
+        if (editMatch) {
+          const filesDiv = document.createElement("div");
+          filesDiv.className = "flex flex-wrap gap-1 mt-2";
+          const files = editMatch[1].split(",").map((f) => f.trim());
+          for (const file of files) {
+            const chip = document.createElement("span");
+            chip.className = "text-[10px] font-mono px-1.5 py-0.5 bg-slate-800 text-indigo-300 rounded border border-slate-700/60";
+            chip.textContent = file;
+            filesDiv.appendChild(chip);
+          }
+          if (editMatch[2]) {
+            const extraChip = document.createElement("span");
+            extraChip.className = "text-[10px] font-mono px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded border border-slate-700/60";
+            extraChip.textContent = `+${editMatch[2]} more`;
+            filesDiv.appendChild(extraChip);
+          }
+          card.appendChild(filesDiv);
+        } else if (session.summary !== session.title) {
+          const summaryP = document.createElement("p");
+          summaryP.className = "text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed";
+          summaryP.textContent = session.summary;
+          card.appendChild(summaryP);
+        }
+      }
+
+      // Footer
+      const footer = document.createElement("div");
+      footer.className = "mt-2 pt-1.5 border-t border-slate-800/70 text-[10px] font-mono text-slate-500 flex justify-between items-center";
+      footer.innerHTML = `<span>${session.id}</span><span class="text-indigo-400 group-hover:text-indigo-300">View handoff &rarr;</span>`;
+      card.appendChild(footer);
+
+      return card;
+    }
+
+    function renderSessions(sessions) {
+      sessionsFeed.innerHTML = "";
+      if (!sessions || sessions.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "text-xs text-slate-500 italic text-center py-4";
+        empty.textContent = "No recent sessions found";
+        sessionsFeed.appendChild(empty);
+        sessionsCount.textContent = "0";
+        return;
+      }
+
+      sessionsCount.textContent = `${sessions.length}`;
+      for (const ses of sessions) {
+        sessionsFeed.appendChild(createSessionSummaryCard(ses));
+      }
     }
 
     function renderObservations(observations) {
@@ -170,6 +316,19 @@
         }
       } catch (err) {
         console.error("Error loading stats:", err);
+      }
+    }
+
+    async function loadRecentSessions() {
+      try {
+        const query = currentProject ? `?project=${encodeURIComponent(currentProject)}` : "";
+        const res = await fetch(`/api/sessions${query}`);
+        if (res.ok) {
+          const data = await res.json();
+          renderSessions(data.sessions || []);
+        }
+      } catch (err) {
+        console.error("Error loading sessions:", err);
       }
     }
 
@@ -224,6 +383,7 @@
     projectSelect.addEventListener("change", (e) => {
       currentProject = e.target.value;
       loadStats();
+      loadRecentSessions();
       if (searchInput.value.trim()) {
         performSearch(searchInput.value.trim());
       } else {
@@ -258,10 +418,17 @@
 
     sse.addEventListener("session_start", () => {
       loadStats();
+      loadRecentSessions();
+    });
+
+    sse.addEventListener("session_update", () => {
+      loadStats();
+      loadRecentSessions();
     });
 
     sse.addEventListener("session_end", () => {
       loadStats();
+      loadRecentSessions();
     });
 
     sse.onerror = () => {
@@ -277,12 +444,34 @@
       document.getElementById("drawerContent").textContent = obs.content || "No raw content attached.";
     }
 
+    function openSessionDrawer(session) {
+      document.getElementById("drawer").classList.remove("hidden");
+      document.getElementById("drawerTitle").textContent = session.title || session.id;
+      document.getElementById("drawerType").textContent = `${session.agentType} · ${session.status}`;
+      document.getElementById("drawerTokens").textContent = formatTime(session.startedAt);
+      const lines = [
+        `=== SESSION: ${session.id} ===`,
+        `Agent: ${session.agentType}`,
+        `Status: ${session.status}`,
+        `Started: ${new Date(session.startedAt).toLocaleString()}`,
+        session.endedAt ? `Ended: ${new Date(session.endedAt).toLocaleString()}` : "",
+        session.title ? `Title: ${session.title}` : "",
+        session.summary ? `Summary: ${session.summary}` : "",
+        session.transcriptPath ? `Transcript: ${session.transcriptPath}` : "",
+        "",
+        "Handoff inspection command:",
+        `agent-mem handoff ${session.id}`,
+      ].filter(Boolean);
+      document.getElementById("drawerContent").textContent = lines.join("\n");
+    }
+
     function closeDrawer() {
       document.getElementById("drawer").classList.add("hidden");
     }
 
     // Initial load
     loadStats();
+    loadRecentSessions();
     loadRecentObservations();
   </script>
 </body>

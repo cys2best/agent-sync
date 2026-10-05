@@ -204,6 +204,38 @@ describe("CLI entry point", () => {
     }
   });
 
+  it("hook transcript uses Claude Code ai-title in the session summary and digest", async () => {
+    const tmpDir = join(import.meta.dir, "__claude_title_test__");
+    mkdirSync(tmpDir, { recursive: true });
+    const transcriptPath = join(tmpDir, "session.jsonl");
+    writeFileSync(
+      transcriptPath,
+      [
+        { type: "user", uuid: "u1", message: { role: "user", content: "initial prompt" } },
+        { type: "ai-title", aiTitle: "Refined Feature Goal", sessionId: "claude-ai-title-1" },
+      ]
+        .map((r) => JSON.stringify(r))
+        .join("\n")
+    );
+
+    try {
+      const proc = Bun.spawn(["bun", "run", cliPath, "hook", "transcript", "--agent", "claude"], {
+        stdin: new Blob([JSON.stringify({ session_id: "claude-ai-title-1", cwd: tmpDir, transcript_path: transcriptPath })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      const stdout = await new Response(proc.stdout).text();
+      expect(await proc.exited).toBe(0);
+
+      const res = await fetch(`http://127.0.0.1:${testPort}/api/digest?project=${getProjectId(tmpDir)}`);
+      const digest = ((await res.json()) as any).digest;
+      expect(digest).toContain("[claude-ai-title-1] (claude, just now): Refined Feature Goal");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("hook session-start keeps the agent's session id", async () => {
     const proc = Bun.spawn(["bun", "run", cliPath, "hook", "session-start"], {
       stdin: new Blob([JSON.stringify({ session_id: "claude-ses-keep", cwd: "/tmp/agent-mem-keep" })]),

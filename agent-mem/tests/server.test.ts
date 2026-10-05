@@ -122,6 +122,30 @@ describe("memory daemon HTTP server", () => {
     expect(digest).toContain("[agent-ses-2] (codex, just now): fix the login bug · edited guard.ts");
   });
 
+  it("stores a chat session title alongside summary", async () => {
+    const res = await fetch(`${baseUrl}/api/hook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "chat",
+        sessionId: "agent-ses-title",
+        projectId: "proj_title",
+        agentType: "claude",
+        title: "Session Native Title",
+        summary: "Session Native Title · edited auth.ts",
+        messages: [{ key: "k1", role: "user", text: "do something", createdAt: Date.now() }],
+      }),
+    });
+    expect(res.status).toBe(200);
+
+    const sessionRes = await fetch(`${baseUrl}/api/sessions?project=proj_title`);
+    const sessions = ((await sessionRes.json()) as any).sessions;
+    const session = sessions.find((s: any) => s.id === "agent-ses-title");
+    expect(session.title).toBe("Session Native Title");
+    expect(session.summary).toBe("Session Native Title · edited auth.ts");
+  });
+
+
   it("lists sessions with transcript paths and warns the next session about an interrupted one", async () => {
     const dir = join(import.meta.dir, "__notice_test__");
     mkdirSync(dir, { recursive: true });

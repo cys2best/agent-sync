@@ -7,4 +7,5 @@
 - Rule visibility: Claude-specific rules are invisible to other agents → keep repository-wide constraints in AGENTS.md.
 - Config precedence: `.agent-sync/config.json` wins → migrate root `.agent-sync.json` only when the canonical file is absent.
 - Version bump: manual find-and-replace misses manifests → run scripts/bump-version.sh <version> to update all declared files and audit drift.
+- Claude plugins: cached manifests require version bump to refresh → run scripts/bump-version.sh and update plugin cache on release.
 <!-- agent-sync:memory:end -->

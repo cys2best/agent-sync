@@ -82,4 +82,41 @@ describe("config module", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("reads overrides from a settings file, ignoring invalid values, with env vars winning", () => {
+    const dir = join(tmpdir(), `agent-mem-settings-${process.pid}`);
+    const settingsPath = join(dir, "settings.json");
+    const saved = { settings: process.env.AGENT_MEM_SETTINGS, port: process.env.AGENT_MEM_PORT, retention: process.env.AGENT_MEM_RETENTION_DAYS };
+    mkdirSync(dir, { recursive: true });
+    try {
+      delete process.env.AGENT_MEM_PORT;
+      delete process.env.AGENT_MEM_RETENTION_DAYS;
+      process.env.AGENT_MEM_SETTINGS = settingsPath;
+
+      // No file yet: defaults
+      expect(getConfig().maxDigestTokens).toBe(250);
+      expect(getConfig().maxRecentSessionsInDigest).toBe(3);
+
+      writeFileSync(settingsPath, JSON.stringify({ port: 4555, maxDigestTokens: 600, maxRecentSessionsInDigest: -2, retentionDays: 0 }));
+      const config = getConfig();
+      expect(config.port).toBe(4555);
+      expect(config.maxDigestTokens).toBe(600);
+      expect(config.maxRecentSessionsInDigest).toBe(3);
+      expect(config.retentionDays).toBe(0);
+
+      process.env.AGENT_MEM_PORT = "4777";
+      process.env.AGENT_MEM_RETENTION_DAYS = "14";
+      expect(getConfig().port).toBe(4777);
+      expect(getConfig().retentionDays).toBe(14);
+
+      writeFileSync(settingsPath, "{ not json");
+      expect(getConfig().maxDigestTokens).toBe(250);
+    } finally {
+      for (const [key, value] of [["AGENT_MEM_SETTINGS", saved.settings], ["AGENT_MEM_PORT", saved.port], ["AGENT_MEM_RETENTION_DAYS", saved.retention]] as const) {
+        if (value !== undefined) process.env[key] = value;
+        else delete process.env[key];
+      }
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

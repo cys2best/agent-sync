@@ -187,4 +187,29 @@ describe("compact digest generator", () => {
     expect(digest).toContain("[ses_meaningful]");
     expect(digest).toContain("Implement feature X");
   });
+
+  it("shows what was asked, changed, and learned ahead of newer exploration noise", () => {
+    insertSession(db, { id: "ses_k", projectId: "proj_demo", agentType: "antigravity", startedAt: Date.now(), status: "completed" });
+    const now = Date.now();
+    const add = (id: string, type: string, summary: string, ageMs: number) =>
+      insertObservation(db, { id, sessionId: "ses_k", projectId: "proj_demo", type, summary, content: "", tokensApprox: 1, createdAt: now - ageMs });
+    add("ask", "user_prompt", "speed up the digest", 9000);
+    add("edit", "replace_file_content", "replace_file_content(TargetFile=src/digest.ts)", 8000);
+    add("why", "assistant_reply", "The root cause is an unbounded query", 7000);
+    for (let i = 0; i < 8; i++) add(`look_${i}`, "view_file", `view_file(AbsolutePath=/repo/f${i}.ts)`, i * 100);
+
+    const digest = generateCompactDigest(db, "proj_demo", "demo");
+    const lines = digest.split("\n").filter((l) => l.startsWith("  - "));
+    expect(lines.slice(0, 3)).toEqual([
+      "  - [why] (finding): The root cause is an unbounded query",
+      "  - [edit] (change): replace_file_content(TargetFile=src/digest.ts)",
+      "  - [ask] (request): speed up the digest",
+    ]);
+  });
+
+  it("still lists recent observations when none of them carry signal", () => {
+    insertSession(db, { id: "ses_n", projectId: "proj_demo", agentType: "antigravity", startedAt: Date.now(), status: "completed" });
+    insertObservation(db, { id: "look", sessionId: "ses_n", projectId: "proj_demo", type: "view_file", summary: "view_file(a.ts)", content: "", tokensApprox: 1, createdAt: Date.now() });
+    expect(generateCompactDigest(db, "proj_demo", "demo")).toContain("  - [look] (exploration): view_file(a.ts)");
+  });
 });

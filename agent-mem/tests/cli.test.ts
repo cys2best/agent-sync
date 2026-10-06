@@ -683,4 +683,150 @@ describe("CLI entry point", () => {
     expect(config.hooks.SessionStart[0].hooks[0].command).toContain("hook session-start");
     expect(config.hooks.Stop[0].hooks[0].command).toContain("hook transcript");
   });
+
+  async function seedChat(projectDir: string, sessionId: string, agentType: string, messages: { key: string; role: string; text: string; createdAt: number }[]) {
+    const res = await fetch(`http://127.0.0.1:${testPort}/api/hook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "chat", projectId: getProjectId(projectDir), projectName: "seeded", sessionId, agentType, messages }),
+    });
+    expect(res.ok).toBe(true);
+  }
+
+  async function runCli(...cliArgs: string[]) {
+    const proc = Bun.spawn(["bun", "run", cliPath, ...cliArgs], {
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+    });
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    return { stdout, stderr, exitCode: await proc.exited };
+  }
+
+  it("timeline prints the steps around an observation and marks the anchor", async () => {
+    const dir = "/tmp/agent-mem-cli-timeline";
+    await seedChat(
+      dir,
+      "tl_ses",
+      "claude",
+      [1, 2, 3, 4, 5].map((n) => ({ key: `k${n}`, role: n % 2 ? "user" : "assistant", text: `timeline step number ${n}`, createdAt: n * 1000 }))
+    );
+
+    const { stdout, exitCode } = await runCli("timeline", "chat_tl_ses_k3", "--before", "1", "--after", "1");
+    expect(exitCode).toBe(0);
+    const lines = stdout.trim().split("\n");
+    expect(lines[0]).toContain("session tl_ses");
+    expect(lines.slice(1).map((l) => l.slice(0, 18))).toEqual(["  [chat_tl_ses_k2]", "→ [chat_tl_ses_k3]", "  [chat_tl_ses_k4]"]);
+    expect(lines[2]).toContain("(request, user_prompt,");
+    expect(lines[2]).toContain("timeline step number 3");
+
+    const missing = await runCli("timeline", "obs_nonexistent");
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toContain("Request failed (404):");
+
+    const noId = await runCli("timeline");
+    expect(noId.exitCode).toBe(1);
+    expect(noId.stderr).toContain("Provide observation ID");
+  });
+
+  it("search narrows results by agent, type, session, and age", async () => {
+    const dir = "/tmp/agent-mem-cli-filters";
+    const now = Date.now();
+    const tenDaysAgo = now - 10 * 24 * 60 * 60 * 1000;
+    await seedChat(dir, "flt_claude", "claude", [
+      { key: "old", role: "user", text: "gizmo rollout planned", createdAt: tenDaysAgo },
+      { key: "new", role: "assistant", text: "gizmo rollout shipped", createdAt: now },
+    ]);
+    await seedChat(dir, "flt_codex", "codex", [{ key: "rev", role: "assistant", text: "gizmo rollout reviewed", createdAt: now }]);
+
+    const found = async (...flags: string[]) => {
+      const { stdout, exitCode } = await runCli("search", "gizmo", "--project", dir, ...flags);
+      expect(exitCode).toBe(0);
+      return [...stdout.matchAll(/\[(chat_[^\]]+)\]/g)].map((m) => m[1]).sort();
+    };
+
+    expect(await found()).toEqual(["chat_flt_claude_new", "chat_flt_claude_old", "chat_flt_codex_rev"]);
+    expect(await found("--agent", "codex")).toEqual(["chat_flt_codex_rev"]);
+    expect(await found("--type", "user_prompt")).toEqual(["chat_flt_claude_old"]);
+    expect(await found("--session", "flt_claude")).toEqual(["chat_flt_claude_new", "chat_flt_claude_old"]);
+    expect(await found("--since", "2d")).toEqual(["chat_flt_claude_new", "chat_flt_codex_rev"]);
+    expect(await found("--kind", "request")).toEqual(["chat_flt_claude_old"]);
+
+    const badKind = await runCli("search", "gizmo", "--project", dir, "--kind", "bogus");
+    expect(badKind.exitCode).toBe(1);
+    expect(badKind.stderr).toContain("Invalid --kind 'bogus'");
+
+    const { stdout } = await runCli("search", "gizmo", "--project", dir, "--agent", "codex");
+    expect(stdout).toContain("[chat_flt_codex_rev] (reply, assistant_reply, codex, just now, ~");
+
+    const bad = await runCli("search", "gizmo", "--project", dir, "--since", "yesterday");
+    expect(bad.exitCode).toBe(1);
+    expect(bad.stderr).toContain("Invalid --since");
+  });
+
+  it("get prints several observations and reports the ones it cannot find", async () => {
+    const dir = "/tmp/agent-mem-cli-multiget";
+    await seedChat(dir, "mg_ses", "claude", [
+      { key: "a", role: "user", text: "first multiget body", createdAt: 1000 },
+      { key: "b", role: "assistant", text: "second multiget body", createdAt: 2000 },
+    ]);
+
+    const both = await runCli("get", "chat_mg_ses_a", "chat_mg_ses_b");
+    expect(both.exitCode).toBe(0);
+    expect(both.stdout).toContain("first multiget body");
+    expect(both.stdout).toContain("second multiget body");
+
+    const partial = await runCli("get", "chat_mg_ses_a", "obs_nonexistent");
+    expect(partial.exitCode).toBe(1);
+    expect(partial.stdout).toContain("first multiget body");
+    expect(partial.stderr).toContain("obs_nonexistent");
+  });
+
+  it("search --file lists what touched a file, including edits read from a Claude transcript", async () => {
+    const tmpDir = join(import.meta.dir, "__file_search_test__");
+    mkdirSync(tmpDir, { recursive: true });
+    const transcriptPath = join(tmpDir, "session.jsonl");
+    const edited = join(tmpDir, "src", "numbat.ts");
+    writeFileSync(
+      transcriptPath,
+      [
+        JSON.stringify({ type: "user", uuid: "u1", message: { role: "user", content: "tidy the burrow module" } }),
+        JSON.stringify({
+          type: "assistant",
+          uuid: "a1",
+          message: { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Edit", input: { file_path: edited } }] },
+        }),
+      ].join("\n")
+    );
+
+    try {
+      const hook = Bun.spawn(["bun", "run", cliPath, "hook", "transcript"], {
+        stdin: new Blob([JSON.stringify({ session_id: "file-search-1", cwd: tmpDir, transcript_path: transcriptPath })]),
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { ...process.env, AGENT_MEM_PORT: testPort.toString() },
+      });
+      expect(await hook.exited).toBe(0);
+
+      const byFile = await runCli("search", "--file", "src/numbat.ts", "--project", tmpDir);
+      expect(byFile.exitCode).toBe(0);
+      expect(byFile.stdout).toContain("observation(s) for file 'src/numbat.ts'");
+      expect(byFile.stdout).toContain("[files_file-search-1] (change, files_edited, claude,");
+
+      const none = await runCli("search", "--file", "src/absent.ts", "--project", tmpDir);
+      expect(none.stdout).toContain("No observations found");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("search prints a multi-line tool summary on one line", async () => {
+    const dir = "/tmp/agent-mem-cli-oneline";
+    const hook = await runCli("hook", "post-tool", "--project", dir, "--summary", "run_command(echidna\n  --flag)", "body");
+    expect(hook.exitCode).toBe(0);
+
+    const { stdout } = await runCli("search", "echidna", "--project", dir);
+    expect(stdout.trim().split("\n")).toHaveLength(2);
+    expect(stdout).toContain("run_command(echidna --flag)");
+  });
 });

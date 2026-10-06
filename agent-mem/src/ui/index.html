@@ -20,6 +20,10 @@
         <input id="searchInput" type="text" placeholder="Search memory (FTS5)..." class="bg-slate-800 border border-slate-700 text-sm px-3 py-1.5 rounded-lg w-64 focus:outline-none focus:border-indigo-500" />
         <button id="clearSearch" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-white text-xs">&times;</button>
       </div>
+      <label class="flex items-center gap-1.5 text-xs text-slate-300 whitespace-nowrap cursor-pointer">
+        <input id="autoReload" type="checkbox" checked class="accent-indigo-500" />
+        Auto-reload
+      </label>
       <span id="connStatus" class="text-xs text-emerald-400 font-medium whitespace-nowrap">● Connected</span>
     </div>
   </header>
@@ -56,20 +60,20 @@
           <div class="text-xs text-slate-500 italic text-center py-4">No recent sessions found</div>
         </div>
       </div>
-
-      <div id="drawer" class="hidden bg-slate-900 p-5 rounded-xl border border-slate-700 shadow-xl sticky top-24">
-        <div class="flex justify-between items-center mb-3">
-          <h4 id="drawerTitle" class="text-sm font-bold text-slate-200 truncate pr-2">Citation Details</h4>
-          <button onclick="closeDrawer()" class="text-slate-400 hover:text-white text-base leading-none">&times;</button>
-        </div>
-        <div class="flex items-center justify-between text-xs font-mono text-slate-400 mb-3 pb-2 border-b border-slate-800">
-          <span id="drawerType" class="text-indigo-400 font-semibold"></span>
-          <span id="drawerTokens" class="text-slate-500"></span>
-        </div>
-        <pre id="drawerContent" class="text-xs bg-slate-950 p-3 rounded text-slate-300 font-mono overflow-x-auto max-h-80 whitespace-pre-wrap break-all"></pre>
-      </div>
     </aside>
   </main>
+
+  <div id="drawer" class="hidden fixed inset-y-0 right-0 z-30 w-full md:w-[56rem] max-w-full bg-slate-900 border-l border-slate-700 shadow-2xl flex flex-col p-5">
+    <div class="flex justify-between items-start gap-3 mb-3">
+      <h4 id="drawerTitle" class="text-sm font-bold text-slate-200 break-words">Citation Details</h4>
+      <button onclick="closeDrawer()" aria-label="Close details" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+    </div>
+    <div class="flex items-center justify-between text-xs font-mono text-slate-400 mb-3 pb-2 border-b border-slate-800">
+      <span id="drawerType" class="text-indigo-400 font-semibold"></span>
+      <span id="drawerTokens" class="text-slate-500"></span>
+    </div>
+    <pre id="drawerContent" class="flex-1 min-h-0 text-xs bg-slate-950 p-3 rounded text-slate-300 font-mono overflow-auto whitespace-pre-wrap break-words"></pre>
+  </div>
 
   <script>
     const feed = document.getElementById("eventsFeed");
@@ -81,8 +85,17 @@
     const sessionsFeed = document.getElementById("sessionsFeed");
     const sessionsCount = document.getElementById("sessionsCount");
 
-    let currentProject = "";
+    const autoReload = document.getElementById("autoReload");
+
+    // The digest links to /p/<project-id>; that id scopes everything the page loads
+    function projectFromUrl() {
+      const match = location.pathname.match(/^\/p\/([^/]+)/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+
+    let currentProject = projectFromUrl();
     let searchTimeout = null;
+    let reloadTimeout = null;
 
     function formatTime(timestamp) {
       if (!timestamp) return "";
@@ -303,15 +316,14 @@
           document.getElementById("statObs").textContent = stats.totalObservations ?? 0;
           if (stats.projects && stats.projects.length > 0) {
             document.getElementById("statProjects").textContent = stats.projects.length;
-            const currentSelected = projectSelect.value;
             projectSelect.innerHTML = '<option value="">All Projects</option>';
             for (const p of stats.projects) {
               const opt = document.createElement("option");
               opt.value = p.id;
               opt.textContent = p.name || p.id;
-              if (opt.value === currentSelected) opt.selected = true;
               projectSelect.appendChild(opt);
             }
+            projectSelect.value = currentProject;
           }
         }
       } catch (err) {
@@ -380,56 +392,74 @@
       loadRecentObservations();
     });
 
-    projectSelect.addEventListener("change", (e) => {
-      currentProject = e.target.value;
-      loadStats();
-      loadRecentSessions();
+    // Reload whatever the feed is showing: search results while a query is typed, otherwise recent observations
+    function loadFeed() {
       if (searchInput.value.trim()) {
         performSearch(searchInput.value.trim());
       } else {
         loadRecentObservations();
       }
+    }
+
+    function loadAll() {
+      loadStats();
+      loadRecentSessions();
+      loadFeed();
+    }
+
+    // A burst of hook events (one per tool call or chat turn) becomes a single reload
+    function scheduleReload() {
+      if (!autoReload.checked) return;
+      clearTimeout(reloadTimeout);
+      reloadTimeout = setTimeout(loadAll, 400);
+    }
+
+    projectSelect.addEventListener("change", (e) => {
+      currentProject = e.target.value;
+      history.pushState(null, "", currentProject ? `/p/${encodeURIComponent(currentProject)}` : "/");
+      loadAll();
     });
+
+    window.addEventListener("popstate", () => {
+      currentProject = projectFromUrl();
+      loadAll();
+    });
+
+    try {
+      autoReload.checked = localStorage.getItem("agent-mem:auto-reload") !== "off";
+    } catch {}
+    autoReload.addEventListener("change", () => {
+      try {
+        localStorage.setItem("agent-mem:auto-reload", autoReload.checked ? "on" : "off");
+      } catch {}
+      if (autoReload.checked) loadAll();
+    });
+
+    // Relative times ("2m ago") and anything missed while the tab slept go stale without a periodic reload
+    setInterval(() => {
+      if (autoReload.checked && !document.hidden) loadAll();
+    }, 30000);
 
     // SSE Real-Time Listener
     const sse = new EventSource("/api/stream");
 
+    let connectedBefore = false;
     sse.onopen = () => {
       document.getElementById("connStatus").textContent = "● Connected";
       document.getElementById("connStatus").className = "text-xs text-emerald-400 font-medium";
+      // Events sent while the stream was down are gone; catch up on reconnect
+      if (connectedBefore) scheduleReload();
+      connectedBefore = true;
     };
 
-    sse.addEventListener("observation", (e) => {
-      const data = JSON.parse(e.data);
-      if (currentProject && data.projectId && data.projectId !== currentProject) {
-        return; // Filtered out
-      }
-      if (!searchInput.value.trim()) {
-        // If feed was empty placeholder, clear it
-        if (feed.querySelector(".text-center")) {
-          feed.innerHTML = "";
-        }
-        const card = createObservationCard(data);
-        feed.prepend(card);
-      }
-      const statObsEl = document.getElementById("statObs");
-      statObsEl.textContent = (parseInt(statObsEl.textContent, 10) || 0) + 1;
-    });
-
-    sse.addEventListener("session_start", () => {
-      loadStats();
-      loadRecentSessions();
-    });
-
-    sse.addEventListener("session_update", () => {
-      loadStats();
-      loadRecentSessions();
-    });
-
-    sse.addEventListener("session_end", () => {
-      loadStats();
-      loadRecentSessions();
-    });
+    // Reload from the server rather than patching the page, so replaced observations and search results stay correct
+    for (const eventName of ["observation", "session_start", "session_update", "session_end"]) {
+      sse.addEventListener(eventName, (e) => {
+        const data = JSON.parse(e.data);
+        if (currentProject && data.projectId && data.projectId !== currentProject) return;
+        scheduleReload();
+      });
+    }
 
     sse.onerror = () => {
       document.getElementById("connStatus").textContent = "○ Reconnecting...";
@@ -469,10 +499,12 @@
       document.getElementById("drawer").classList.add("hidden");
     }
 
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeDrawer();
+    });
+
     // Initial load
-    loadStats();
-    loadRecentSessions();
-    loadRecentObservations();
+    loadAll();
   </script>
 </body>
 </html>

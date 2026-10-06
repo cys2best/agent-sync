@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,23 +15,47 @@ export interface AgentMemConfig {
   secretPatterns: RegExp[];
 }
 
-const DEFAULT_RETENTION_DAYS = 90;
+const DEFAULTS = { port: 3777, maxDigestTokens: 250, maxRecentSessionsInDigest: 3, retentionDays: 90 };
 
-function parseRetentionDays(value: string | undefined): number {
+type Settings = typeof DEFAULTS;
+
+const SETTING_MINIMUMS: Settings = { port: 1, maxDigestTokens: 1, maxRecentSessionsInDigest: 1, retentionDays: 0 };
+
+/**
+ * Defaults overridden by ~/.agent-mem/settings.json (or the file AGENT_MEM_SETTINGS names).
+ * A missing or malformed file, and any value that is not a whole number in range, leaves the default in place.
+ */
+function loadSettings(globalDbDir: string): Settings {
+  const settings = { ...DEFAULTS };
+  let file: Record<string, unknown>;
+  try {
+    file = JSON.parse(readFileSync(process.env.AGENT_MEM_SETTINGS || join(globalDbDir, "settings.json"), "utf-8"));
+  } catch {
+    return settings;
+  }
+  for (const key of Object.keys(DEFAULTS) as (keyof Settings)[]) {
+    const value = file?.[key];
+    if (typeof value === "number" && Number.isInteger(value) && value >= SETTING_MINIMUMS[key]) settings[key] = value;
+  }
+  return settings;
+}
+
+function parseRetentionDays(value: string | undefined, fallback: number): number {
   const days = Number(value);
-  return value !== undefined && Number.isInteger(days) && days >= 0 ? days : DEFAULT_RETENTION_DAYS;
+  return value !== undefined && Number.isInteger(days) && days >= 0 ? days : fallback;
 }
 
 export function getConfig(): AgentMemConfig {
   const globalDbDir = join(homedir(), ".agent-mem");
+  const settings = loadSettings(globalDbDir);
   return {
-    port: parseInt(process.env.AGENT_MEM_PORT || "3777", 10),
+    port: process.env.AGENT_MEM_PORT ? parseInt(process.env.AGENT_MEM_PORT, 10) : settings.port,
     globalDbDir,
     globalDbPath: join(globalDbDir, "mem.db"),
     projectDbRelativePath: ".agent-mem/mem.db",
-    maxDigestTokens: 250,
-    maxRecentSessionsInDigest: 3,
-    retentionDays: parseRetentionDays(process.env.AGENT_MEM_RETENTION_DAYS),
+    maxDigestTokens: settings.maxDigestTokens,
+    maxRecentSessionsInDigest: settings.maxRecentSessionsInDigest,
+    retentionDays: parseRetentionDays(process.env.AGENT_MEM_RETENTION_DAYS, settings.retentionDays),
     secretPatterns: [
       /sk-ant-[a-zA-Z0-9_\-]{20,}/g,
       /sk-[a-zA-Z0-9]{30,}/g,

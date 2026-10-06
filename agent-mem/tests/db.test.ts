@@ -6,6 +6,7 @@ import {
   getObservationById,
   getRecentObservations,
   getRecentSessions,
+  getTimeline,
   insertEvent,
   insertObservation,
   insertSession,
@@ -331,5 +332,157 @@ describe("database operations", () => {
     } finally {
       memoryDb.close();
     }
+  });
+});
+
+describe("timeline and filtered search", () => {
+  let db: Database;
+
+  function obs(id: string, sessionId: string, createdAt: number, summary: string, type = "tool") {
+    insertObservation(db, { id, sessionId, projectId: "p", type, summary, content: summary, tokensApprox: 1, createdAt });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    initializeSchema(db);
+    upsertProject(db, { id: "p", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "s_claude", projectId: "p", agentType: "claude", startedAt: 1, status: "active" });
+    insertSession(db, { id: "s_codex", projectId: "p", agentType: "codex", startedAt: 2, status: "active" });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("returns the observations around an anchor, oldest first, from its session only", () => {
+    for (let i = 1; i <= 7; i++) obs(`a${i}`, "s_claude", i * 10, `step ${i}`);
+    obs("other", "s_codex", 35, "unrelated session");
+
+    const timeline = getTimeline(db, "a4", 2, 1);
+    expect(timeline?.anchor.id).toBe("a4");
+    expect(timeline?.before.map((o) => o.id)).toEqual(["a2", "a3"]);
+    expect(timeline?.after.map((o) => o.id)).toEqual(["a5"]);
+    expect(getTimeline(db, "missing")).toBeNull();
+  });
+
+  it("keeps insertion order for observations sharing a timestamp", () => {
+    obs("t1", "s_claude", 100, "first");
+    obs("t2", "s_claude", 100, "second");
+    obs("t3", "s_claude", 100, "third");
+
+    const timeline = getTimeline(db, "t2");
+    expect(timeline?.before.map((o) => o.id)).toEqual(["t1"]);
+    expect(timeline?.after.map((o) => o.id)).toEqual(["t3"]);
+  });
+
+  it("filters search by type, agent, session, and age, and reports the agent", () => {
+    obs("c_old", "s_claude", 1000, "migrated the widget table", "user_prompt");
+    obs("c_new", "s_claude", 5000, "widget table index added", "assistant_reply");
+    obs("x_new", "s_codex", 6000, "widget table reviewed", "assistant_reply");
+
+    const ids = (filters: Parameters<typeof searchObservations>[4]) =>
+      searchObservations(db, "widget", "p", 10, filters).map((o) => o.id).sort();
+
+    expect(ids({})).toEqual(["c_new", "c_old", "x_new"]);
+    expect(ids({ type: "user_prompt" })).toEqual(["c_old"]);
+    expect(ids({ agent: "codex" })).toEqual(["x_new"]);
+    expect(ids({ sessionId: "s_claude" })).toEqual(["c_new", "c_old"]);
+    expect(ids({ since: 4000 })).toEqual(["c_new", "x_new"]);
+    expect(ids({ agent: "claude", since: 4000 })).toEqual(["c_new"]);
+
+    expect(searchObservations(db, "widget", "p", 10, { agent: "codex" })[0].agentType).toBe("codex");
+  });
+
+  it("falls back to matching any term when no observation has them all", () => {
+    obs("only_cache", "s_claude", 10, "tuned the cache eviction policy");
+    obs("both", "s_claude", 20, "cache invalidation on logout");
+
+    // Every term present somewhere: strict match wins, no widening
+    expect(searchObservations(db, "cache logout", "p").map((o) => o.id)).toEqual(["both"]);
+    // "zebra" appears nowhere: widen instead of returning nothing
+    expect(searchObservations(db, "cache zebra", "p").map((o) => o.id).sort()).toEqual(["both", "only_cache"]);
+    // A quoted phrase is never widened
+    expect(searchObservations(db, '"cache zebra"', "p")).toEqual([]);
+  });
+});
+
+describe("file index", () => {
+  let db: Database;
+
+  function obs(id: string, summary: string, content = "", createdAt = Date.now()) {
+    insertObservation(db, { id, sessionId: "s", projectId: "p", type: "tool", summary, content, tokensApprox: 1, createdAt });
+  }
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    initializeSchema(db);
+    upsertProject(db, { id: "p", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "s", projectId: "p", agentType: "claude", startedAt: 1, status: "active" });
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("finds observations by file, whichever of the two paths is the longer one", () => {
+    obs("rel", "refactored src/db/queries.ts for speed", "", 1);
+    obs("abs", "edit", '{"file_path":"/p/src/db/queries.ts"}', 2);
+    obs("near_miss", "wrote src/db/other_queries.ts", "", 3);
+
+    const byFile = (file: string, query = "") => searchObservations(db, query, "p", 10, { file }).map((o) => o.id);
+
+    // No text query: newest first
+    expect(byFile("src/db/queries.ts")).toEqual(["abs", "rel"]);
+    expect(byFile("queries.ts")).toEqual(["abs", "rel"]);
+    expect(byFile("/p/src/db/queries.ts")).toEqual(["abs", "rel"]);
+    expect(byFile("other_queries.ts")).toEqual(["near_miss"]);
+    // Combined with a text query
+    expect(byFile("queries.ts", "speed")).toEqual(["rel"]);
+    // Without a file or a query there is nothing to search for
+    expect(searchObservations(db, "", "p")).toEqual([]);
+  });
+
+  it("drops a file's entries when its observation is deleted", () => {
+    obs("gone", "touched src/app.ts");
+    db.prepare("DELETE FROM observations WHERE id = ?").run("gone");
+    expect((db.prepare("SELECT COUNT(*) as n FROM observation_files").get() as any).n).toBe(0);
+  });
+
+  it("indexes the files of observations recorded before the index existed", () => {
+    obs("legacy", "patched lib/legacy.rb");
+    db.exec("DROP TABLE observation_files");
+    initializeSchema(db);
+    expect(searchObservations(db, "", "p", 10, { file: "lib/legacy.rb" }).map((o) => o.id)).toEqual(["legacy"]);
+  });
+});
+
+describe("observation kinds", () => {
+  it("stores a kind for each observation and filters search by it", () => {
+    const db = new Database(":memory:");
+    initializeSchema(db);
+    upsertProject(db, { id: "p", name: "p", rootPath: "/p" });
+    insertSession(db, { id: "s", projectId: "p", agentType: "claude", startedAt: 1, status: "active" });
+    const add = (id: string, type: string, summary: string) =>
+      insertObservation(db, { id, sessionId: "s", projectId: "p", type, summary, content: "", tokensApprox: 1, createdAt: 1 });
+    add("ask", "user_prompt", "make the possum cache faster");
+    add("why", "assistant_reply", "The root cause is the possum cache key");
+    add("done", "assistant_reply", "possum cache is faster now");
+
+    expect(getObservationById(db, "ask")?.kind).toBe("request");
+    expect(searchObservations(db, "possum", "p", 10, { kind: "finding" }).map((o) => o.id)).toEqual(["why"]);
+    expect(searchObservations(db, "possum", "p", 10, { kind: "finding" })[0].kind).toBe("finding");
+    expect(getTimeline(db, "why")?.anchor.kind).toBe("finding");
+    db.close();
+  });
+
+  it("classifies observations recorded before kinds existed", () => {
+    const old = new Database(":memory:");
+    old.exec(`CREATE TABLE observations (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, project_id TEXT NOT NULL, type TEXT NOT NULL,
+      summary TEXT NOT NULL, content TEXT NOT NULL, tokens_approx INTEGER NOT NULL, created_at INTEGER NOT NULL)`);
+    old.exec(`INSERT INTO observations VALUES ('legacy', 's', 'p', 'write_to_file', 'wrote a file', '', 1, 1)`);
+    initializeSchema(old);
+    initializeSchema(old);
+    expect(getObservationById(old, "legacy")?.kind).toBe("change");
+    old.close();
   });
 });

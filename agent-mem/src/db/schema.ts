@@ -1,6 +1,10 @@
 import { Database } from "bun:sqlite";
+import { classifyObservation } from "../context/classify";
+import { indexObservationFiles } from "./queries";
 
 export function initializeSchema(db: Database): void {
+  const hadFileIndex = Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'observation_files'").get());
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
@@ -39,7 +43,8 @@ export function initializeSchema(db: Database): void {
       summary TEXT NOT NULL,
       content TEXT NOT NULL,
       tokens_approx INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      kind TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_sessions_project_started ON sessions(project_id, started_at DESC);
@@ -62,11 +67,43 @@ export function initializeSchema(db: Database): void {
     CREATE TRIGGER IF NOT EXISTS observations_ad AFTER DELETE ON observations BEGIN
       DELETE FROM observations_fts WHERE id = old.id;
     END;
+
+    CREATE TABLE IF NOT EXISTS observation_files (
+      observation_id TEXT NOT NULL,
+      project_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      PRIMARY KEY (observation_id, path)
+    );
+
+    CREATE TRIGGER IF NOT EXISTS observation_files_ad AFTER DELETE ON observations BEGIN
+      DELETE FROM observation_files WHERE observation_id = old.id;
+    END;
   `);
+
+  // Observations recorded before the file index existed are indexed once, when the table first appears
+  if (!hadFileIndex) {
+    const rows = db.prepare("SELECT id, project_id as projectId, summary, content FROM observations").all() as any[];
+    db.transaction(() => {
+      for (const row of rows) indexObservationFiles(db, row);
+    })();
+  }
 
   // Databases created before transcript_path existed need the column added in place
   const sessionColumns = (db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]).map((c) => c.name);
   if (!sessionColumns.includes("transcript_path")) {
     db.exec("ALTER TABLE sessions ADD COLUMN transcript_path TEXT");
+  }
+
+  // Databases created before kinds existed get the column, then every unclassified observation is classified once
+  const observationColumns = (db.prepare("PRAGMA table_info(observations)").all() as { name: string }[]).map((c) => c.name);
+  if (!observationColumns.includes("kind")) {
+    db.exec("ALTER TABLE observations ADD COLUMN kind TEXT");
+  }
+  const unclassified = db.prepare("SELECT id, type, summary, content FROM observations WHERE kind IS NULL").all() as any[];
+  if (unclassified.length > 0) {
+    const setKind = db.prepare("UPDATE observations SET kind = ? WHERE id = ?");
+    db.transaction(() => {
+      for (const row of unclassified) setKind.run(classifyObservation(row), row.id);
+    })();
   }
 }

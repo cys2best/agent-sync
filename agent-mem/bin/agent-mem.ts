@@ -4,6 +4,8 @@ import { extractEditedFiles, parseTranscript, resolveAgentTitle, summarizeSessio
 import { grepSteps, loadHandoff, parseEvents, readTranscriptTail, resolveTranscriptSource, sessionStatus, stepDetail, stepsBefore } from "../src/context/handoff";
 import { ensureDaemonRunning, stopDaemon } from "../src/daemon/lifecycle";
 import { getConfig, getProjectId } from "../src/config";
+import { OBSERVATION_KINDS } from "../src/context/classify";
+import { formatRelativeTime } from "../src/context/digest";
 import { installAntigravityHooks, installCodexHooks } from "../src/install/hooks";
 import { AGENTS, runInstall } from "../src/install/install";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
@@ -21,7 +23,15 @@ Commands:
   daemon [--port <num>]          Run the persistent memory worker daemon
   hook <event> [options]         Trigger a lifecycle hook (session-start, post-tool, transcript, session-end)
   search <query> [--limit <n>]   Search project memory using SQLite FTS5
-  get <observation-id>           Retrieve exact content of an observation
+    --kind <kind>                Only this kind: request, decision, finding, change, verification, exploration, command, reply, other
+    --type <type>                Only this observation type (e.g. user_prompt, assistant_reply, a tool name)
+    --agent <type>               Only sessions recorded by this agent
+    --session <session-id>       Only this session
+    --since <age>                Only the last 30m, 12h, 2d, or 1w
+    --file <path>                Only observations mentioning this file; the query is optional with it
+  timeline <observation-id>      Show what happened just before and after an observation in its session
+    --before <n> --after <n>     How many steps on each side (default 5)
+  get <id> [<id>...]             Retrieve exact content of one or more observations
   sessions [--limit <n>]         List recent sessions from all agents with their stop status
   handoff [<session-id>]         Print where a session stopped (default: latest interrupted one)
     --step @<offset>             Full text of one step (offsets come from the handoff output)
@@ -67,6 +77,20 @@ async function readStdinJson(): Promise<Record<string, any>> {
 function getArgValue(flag: string): string | undefined {
   const idx = args.indexOf(flag);
   return idx !== -1 && args[idx + 1] ? args[idx + 1] : undefined;
+}
+
+/** "30m" | "12h" | "2d" | "1w" → milliseconds; undefined when the text is not an age. */
+function parseAge(text: string): number | undefined {
+  const match = /^(\d+)([mhdw])$/.exec(text.trim());
+  if (!match) return undefined;
+  const unitMs = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[match[2] as "m" | "h" | "d" | "w"];
+  return Number(match[1]) * unitMs;
+}
+
+function observationLine(o: { id: string; kind?: string; type: string; agentType?: string; createdAt: number; tokensApprox: number; summary: string }): string {
+  const details = [o.kind, o.type, o.agentType, formatRelativeTime(o.createdAt), `~${o.tokensApprox} tokens`].filter(Boolean);
+  // Tool summaries can span lines; a result must stay on one
+  return `[${o.id}] (${details.join(", ")}): ${o.summary.replace(/\s+/g, " ").trim()}`;
 }
 
 if (command === "daemon") {
@@ -262,6 +286,7 @@ if (command === "daemon") {
           title: agentTitle,
           summary: summarizeSession(messages, editedFiles, agentTitle),
           messages,
+          editedFiles,
         }),
       });
       if (!res.ok) {
@@ -366,16 +391,12 @@ if (command === "daemon") {
     }
   }
 } else if (command === "search") {
-  const projectIndex = args.indexOf("--project");
-  const projectPath = projectIndex !== -1 ? args[projectIndex + 1] : process.cwd();
-  const projectId = getProjectId(projectPath);
+  const projectId = getProjectId(getArgValue("--project") || process.cwd());
 
-  const limitIndex = args.indexOf("--limit");
-  const limit = limitIndex !== -1 ? args[limitIndex + 1] : undefined;
-
+  const valueFlags = new Set(["--limit", "--project", "--type", "--agent", "--session", "--since", "--file", "--kind"]);
   const queryTokens: string[] = [];
   for (let i = 1; i < args.length; i++) {
-    if (args[i] === "--limit" || args[i] === "--project") {
+    if (valueFlags.has(args[i])) {
       i++;
     } else if (!args[i].startsWith("--")) {
       queryTokens.push(args[i]);
@@ -383,46 +404,94 @@ if (command === "daemon") {
   }
   const query = queryTokens.join(" ");
 
-  if (!query) {
+  const file = getArgValue("--file");
+
+  if (!query && !file) {
     console.error("Provide a search query");
     process.exit(1);
   }
 
-  const serverUrl = await ensureDaemonRunning();
-  let searchUrl = `${serverUrl}/api/search?q=${encodeURIComponent(query)}&project=${projectId}`;
-  if (limit) {
-    searchUrl += `&limit=${encodeURIComponent(limit)}`;
+  const params = new URLSearchParams({ q: query, project: projectId });
+  for (const [flag, name] of [["--limit", "limit"], ["--type", "type"], ["--agent", "agent"], ["--session", "session"], ["--file", "file"], ["--kind", "kind"]]) {
+    const value = getArgValue(flag);
+    if (value) params.set(name, value);
   }
-  const res = await fetch(searchUrl);
+  const kind = getArgValue("--kind");
+  if (kind && !(OBSERVATION_KINDS as string[]).includes(kind)) {
+    console.error(`Invalid --kind '${kind}'. Use one of: ${OBSERVATION_KINDS.join(", ")}.`);
+    process.exit(1);
+  }
+  const since = getArgValue("--since");
+  if (since) {
+    const ageMs = parseAge(since);
+    if (ageMs === undefined) {
+      console.error(`Invalid --since '${since}'. Use a number and a unit: 30m, 12h, 2d, 1w.`);
+      process.exit(1);
+    }
+    params.set("since", String(Date.now() - ageMs));
+  }
+
+  const serverUrl = await ensureDaemonRunning();
+  const res = await fetch(`${serverUrl}/api/search?${params}`);
   if (!res.ok) {
     console.error(`Request failed (${res.status}): ${await res.text()}`);
     process.exit(1);
   }
   const data = (await res.json()) as any;
   const results = data.results || [];
+  const subject = [query && `'${query}'`, file && `file '${file}'`].filter(Boolean).join(" in ");
   if (results.length === 0) {
-    console.log(`No observations found matching '${query}'.`);
+    console.log(`No observations found matching ${subject}.`);
   } else {
-    console.log(`Found ${results.length} observation(s) for '${query}':`);
+    console.log(`Found ${results.length} observation(s) for ${subject}:`);
     for (const r of results) {
-      console.log(`• [${r.id}] (~${r.tokensApprox} tokens): ${r.summary}`);
+      console.log(`• ${observationLine(r)}`);
     }
   }
-} else if (command === "get") {
+} else if (command === "timeline") {
   const obsId = args[1];
-  if (!obsId) {
+  if (!obsId || obsId.startsWith("--")) {
     console.error("Provide observation ID");
     process.exit(1);
   }
+  const params = new URLSearchParams({ id: obsId });
+  for (const name of ["before", "after"]) {
+    const value = getArgValue(`--${name}`);
+    if (value) params.set(name, value);
+  }
   const serverUrl = await ensureDaemonRunning();
-  const res = await fetch(`${serverUrl}/api/observations/${obsId}`);
+  const res = await fetch(`${serverUrl}/api/timeline?${params}`);
   if (!res.ok) {
     console.error(`Request failed (${res.status}): ${await res.text()}`);
     process.exit(1);
   }
   const data = (await res.json()) as any;
-  console.log(`[${data.id}] (${data.type}) ~${data.tokensApprox} tokens:`);
-  console.log(data.content);
+  console.log(`Timeline around [${data.anchor.id}] (session ${data.anchor.sessionId}):`);
+  for (const o of data.before) console.log(`  ${observationLine(o)}`);
+  console.log(`→ ${observationLine(data.anchor)}`);
+  for (const o of data.after) console.log(`  ${observationLine(o)}`);
+} else if (command === "get") {
+  const obsIds = args.slice(1).filter((a) => !a.startsWith("--"));
+  if (obsIds.length === 0) {
+    console.error("Provide observation ID");
+    process.exit(1);
+  }
+  const serverUrl = await ensureDaemonRunning();
+  let failed = false;
+  let printed = 0;
+  for (const obsId of obsIds) {
+    const res = await fetch(`${serverUrl}/api/observations/${obsId}`);
+    if (!res.ok) {
+      console.error(`[${obsId}] Request failed (${res.status}): ${await res.text()}`);
+      failed = true;
+      continue;
+    }
+    const data = (await res.json()) as any;
+    if (printed++ > 0) console.log("");
+    console.log(`[${data.id}] (${data.type}) ~${data.tokensApprox} tokens:`);
+    console.log(data.content);
+  }
+  if (failed) process.exit(1);
 } else if (command === "digest") {
   const projectIndex = args.indexOf("--project");
   const projectPath = projectIndex !== -1 ? args[projectIndex + 1] : process.cwd();

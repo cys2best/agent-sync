@@ -6,9 +6,11 @@ import {
   getRecentObservations,
   getRecentSessions,
   getStats,
+  getTimeline,
   pruneOldData,
   insertObservation,
   insertSession,
+  replaceObservation,
   searchObservations,
   updateSession,
   upsertProject,
@@ -29,6 +31,8 @@ function jsonResponse(data: any, status = 200): Response {
     },
   });
 }
+
+const MAX_FILES_IN_SUMMARY = 5;
 
 const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -249,6 +253,31 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
             }
           }
 
+          // Chat turns carry no tool calls, so the files a session edited get one observation of their own
+          const editedFiles: string[] = Array.isArray(body.editedFiles) ? body.editedFiles.filter((f: unknown) => typeof f === "string" && f) : [];
+          if (editedFiles.length > 0) {
+            const id = `files_${sessionId}`;
+            const content = editedFiles.join("\n");
+            const previous = getObservationById(db, id);
+            // The list only grows within a session; rewrite the observation when it does
+            if (previous?.content !== content) {
+              const shown = editedFiles.slice(0, MAX_FILES_IN_SUMMARY).join(", ");
+              const extra = editedFiles.length - MAX_FILES_IN_SUMMARY;
+              const observation = {
+                id,
+                sessionId,
+                projectId,
+                type: "files_edited",
+                summary: `Edited ${shown}${extra > 0 ? ` +${extra}` : ""}`,
+                content,
+                tokensApprox: estimateTokenCount(content),
+                createdAt: Date.now(),
+              };
+              replaceObservation(db, observation);
+              sseHub.broadcast("observation", observation);
+            }
+          }
+
           return jsonResponse({ status: "ok", recorded });
         }
 
@@ -281,8 +310,33 @@ export function createMemoryServer(options?: { port?: number; dbPath?: string })
         const projectId = url.searchParams.get("project") || undefined;
         const rawLimit = parseInt(url.searchParams.get("limit") || "10", 10);
         const limit = Number.isNaN(rawLimit) || rawLimit <= 0 ? 10 : rawLimit;
-        const results = searchObservations(db, q, projectId, limit);
+        const since = Number(url.searchParams.get("since"));
+        const results = searchObservations(db, q, projectId, limit, {
+          type: url.searchParams.get("type") || undefined,
+          kind: url.searchParams.get("kind") || undefined,
+          agent: url.searchParams.get("agent") || undefined,
+          sessionId: url.searchParams.get("session") || undefined,
+          since: Number.isFinite(since) && since > 0 ? since : undefined,
+          file: url.searchParams.get("file") || undefined,
+        });
         return jsonResponse({ results });
+      }
+
+      // 5.1 Timeline around one observation
+      if (url.pathname === "/api/timeline") {
+        const id = url.searchParams.get("id");
+        if (!id) {
+          return jsonResponse({ error: "Observation ID required" }, 400);
+        }
+        const count = (name: string) => {
+          const value = parseInt(url.searchParams.get(name) || "", 10);
+          return Number.isNaN(value) || value < 0 ? 5 : value;
+        };
+        const timeline = getTimeline(db, id, count("before"), count("after"));
+        if (!timeline) {
+          return jsonResponse({ error: "Observation not found" }, 404);
+        }
+        return jsonResponse(timeline);
       }
 
       // 5.5 List Recent Observations

@@ -332,4 +332,55 @@ describe("memory daemon HTTP server", () => {
       squatter.stop(true);
     }
   });
+
+  it("serves /api/timeline around an observation and rejects bad ids", async () => {
+    await fetch(`${baseUrl}/api/hook`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "chat",
+        projectId: "tl_proj",
+        sessionId: "tl_api",
+        agentType: "codex",
+        messages: [1, 2, 3].map((n) => ({ key: `m${n}`, role: "user", text: `api timeline ${n}`, createdAt: n })),
+      }),
+    });
+
+    const res = await fetch(`${baseUrl}/api/timeline?id=chat_tl_api_m2&before=1&after=1`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.anchor.id).toBe("chat_tl_api_m2");
+    expect(data.before.map((o: any) => o.id)).toEqual(["chat_tl_api_m1"]);
+    expect(data.after.map((o: any) => o.id)).toEqual(["chat_tl_api_m3"]);
+
+    expect((await fetch(`${baseUrl}/api/timeline`)).status).toBe(400);
+    expect((await fetch(`${baseUrl}/api/timeline?id=nope`)).status).toBe(404);
+
+    const filtered = (await (await fetch(`${baseUrl}/api/search?q=timeline&project=tl_proj&agent=claude`)).json()) as any;
+    expect(filtered.results).toEqual([]);
+    const matched = (await (await fetch(`${baseUrl}/api/search?q=timeline&project=tl_proj&agent=codex`)).json()) as any;
+    expect(matched.results.length).toBe(3);
+  });
+
+  it("keeps one files_edited observation per session and refreshes it as the list grows", async () => {
+    const post = (editedFiles: string[]) =>
+      fetch(`${baseUrl}/api/hook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "chat", projectId: "fe_proj", sessionId: "fe_ses", agentType: "codex", messages: [], editedFiles }),
+      });
+    const touching = async (file: string) =>
+      ((await (await fetch(`${baseUrl}/api/search?project=fe_proj&file=${file}`)).json()) as any).results as any[];
+
+    await post(["lib/quoll.py"]);
+    await post(["lib/quoll.py"]);
+    expect((await touching("lib/quoll.py")).map((o) => o.id)).toEqual(["files_fe_ses"]);
+    expect(await touching("lib/bilby.py")).toEqual([]);
+
+    await post(["lib/quoll.py", "lib/bilby.py"]);
+    const [observation] = await touching("lib/bilby.py");
+    expect(observation.type).toBe("files_edited");
+    expect(observation.content).toBe("lib/quoll.py\nlib/bilby.py");
+    expect((await touching("lib/quoll.py")).length).toBe(1);
+  });
 });

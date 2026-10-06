@@ -10,7 +10,7 @@ export function estimateTokenCount(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function formatRelativeTime(timestamp: number): string {
+export function formatRelativeTime(timestamp: number): string {
   const diffSec = Math.floor((Date.now() - timestamp) / 1000);
   if (diffSec < 60) return "just now";
   const diffMin = Math.floor(diffSec / 60);
@@ -22,6 +22,13 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 const MAX_LINE_CHARS = 120;
+
+// How far back the digest looks for observations worth showing, and how many it shows
+const DIGEST_CANDIDATES = 50;
+const DIGEST_OBSERVATIONS = 5;
+
+// What was learned outranks what was done, which outranks routine reads, commands, and plain replies
+const KIND_WEIGHT: Record<string, number> = { finding: 3, decision: 3, change: 2, request: 2, verification: 1 };
 
 function clip(text: string): string {
   return text.length > MAX_LINE_CHARS ? text.slice(0, MAX_LINE_CHARS - 3) + "..." : text;
@@ -45,7 +52,10 @@ export function generateCompactDigest(
     return aHas ? -1 : 1;
   });
   const sessions = sorted.slice(0, config.maxRecentSessionsInDigest);
-  const observations = getRecentObservations(db, projectId, 5);
+  // The sort is stable, so observations of equal weight stay newest first
+  const observations = getRecentObservations(db, projectId, DIGEST_CANDIDATES)
+    .sort((a, b) => (KIND_WEIGHT[b.kind ?? ""] ?? 0) - (KIND_WEIGHT[a.kind ?? ""] ?? 0))
+    .slice(0, DIGEST_OBSERVATIONS);
 
   const base = webViewerUrl.replace(/\/+$/, "");
   const head: string[] = [];
@@ -70,12 +80,12 @@ export function generateCompactDigest(
     "=================================",
   ];
 
-  // Observations fill whatever budget remains, newest first, so the digest never grows with history
+  // Observations fill whatever budget remains, most useful first, so the digest never grows with history
   let used = estimateTokenCount([...head, ...tail].join("\n"));
   const obsHeader = "Key Recent Observations:";
   const obsLines: string[] = [];
   for (const obs of observations) {
-    const line = `  - [${obs.id}] (${obs.type}): ${clip(obs.summary)}`;
+    const line = `  - [${obs.id}] (${obs.kind ?? obs.type}): ${clip(obs.summary)}`;
     const cost = estimateTokenCount(line + "\n") + (obsLines.length === 0 ? estimateTokenCount(obsHeader + "\n") : 0);
     if (used + cost > config.maxDigestTokens) break;
     used += cost;

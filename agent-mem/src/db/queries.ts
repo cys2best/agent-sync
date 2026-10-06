@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite";
+import { classifyObservation } from "../context/classify";
+import { extractFilePaths } from "../context/files";
 
 export interface Project {
   id: string;
@@ -38,6 +40,8 @@ export interface Observation {
   content: string;
   tokensApprox: number;
   createdAt: number;
+  /** What the observation was for (request, change, finding, ...); inferred on insert when omitted. */
+  kind?: string;
 }
 
 export function upsertProject(db: Database, project: Project): void {
@@ -112,8 +116,8 @@ export function insertEvent(db: Database, event: EventRecord): void {
 /** Returns false when an observation with the same id already exists. */
 export function insertObservation(db: Database, obs: Observation): boolean {
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO observations (id, session_id, project_id, type, summary, content, tokens_approx, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO observations (id, session_id, project_id, type, summary, content, tokens_approx, created_at, kind)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const result = stmt.run(
     obs.id,
@@ -123,61 +127,156 @@ export function insertObservation(db: Database, obs: Observation): boolean {
     obs.summary,
     obs.content,
     obs.tokensApprox,
-    obs.createdAt
+    obs.createdAt,
+    obs.kind ?? classifyObservation(obs)
   );
-  return result.changes > 0;
+  if (result.changes === 0) return false;
+  indexObservationFiles(db, obs);
+  return true;
+}
+
+/** Swap in a new version of an observation whose content changes over a session. */
+export function replaceObservation(db: Database, obs: Observation): void {
+  db.transaction(() => {
+    db.prepare("DELETE FROM observations WHERE id = ?").run(obs.id);
+    insertObservation(db, obs);
+  })();
+}
+
+/** Record which files an observation mentions, so memory can be searched by file. */
+export function indexObservationFiles(db: Database, obs: Pick<Observation, "id" | "projectId" | "summary" | "content">): void {
+  const stmt = db.prepare("INSERT OR IGNORE INTO observation_files (observation_id, project_id, path) VALUES (?, ?, ?)");
+  for (const path of extractFilePaths(`${obs.summary}\n${obs.content}`)) {
+    stmt.run(obs.id, obs.projectId, path);
+  }
+}
+
+export interface SearchFilters {
+  type?: string;
+  agent?: string;
+  sessionId?: string;
+  kind?: string;
+  /** Only observations created at or after this epoch-millisecond timestamp. */
+  since?: number;
+  /** Only observations mentioning this file; a bare name or a longer path than the recorded one both match. */
+  file?: string;
+}
+
+export type SearchResult = Observation & { agentType: string };
+
+const OBSERVATION_COLUMNS = `o.id, o.session_id as sessionId, o.project_id as projectId, o.type,
+           o.summary, o.content, o.tokens_approx as tokensApprox, o.created_at as createdAt, o.kind`;
+
+// Either path may be the longer one: an absolute path was recorded and a relative one is asked for, or the reverse
+const FILE_MATCH = `EXISTS (
+      SELECT 1 FROM observation_files f
+      WHERE f.observation_id = o.id
+        AND (f.path = ?1 OR substr(f.path, -length(?1) - 1) = '/' || ?1 OR substr(?1, -length(f.path) - 1) = '/' || f.path)
+    )`;
+
+/** Ranked by relevance when there is a text query, otherwise newest first. */
+function runSearch(db: Database, ftsQuery: string | undefined, projectId: string | undefined, limit: number, filters: SearchFilters): SearchResult[] {
+  const conditions: [string, string | number | undefined][] = [
+    ["observations_fts MATCH ?", ftsQuery],
+    ["o.project_id = ?", projectId],
+    ["o.type = ?", filters.type],
+    ["o.kind = ?", filters.kind],
+    ["s.agent_type = ?", filters.agent],
+    ["o.session_id = ?", filters.sessionId],
+    ["o.created_at >= ?", filters.since],
+  ];
+  const clauses: string[] = [];
+  const params: (string | number)[] = [];
+  // The file is bound first because FILE_MATCH refers to it by position
+  if (filters.file !== undefined) {
+    clauses.push(FILE_MATCH);
+    params.push(filters.file);
+  }
+  for (const [clause, value] of conditions) {
+    if (value === undefined) continue;
+    clauses.push(clause);
+    params.push(value);
+  }
+  params.push(limit);
+
+  const sql = `
+    SELECT ${OBSERVATION_COLUMNS}, s.agent_type as agentType
+    FROM observations o
+    JOIN sessions s ON s.id = o.session_id
+    ${ftsQuery === undefined ? "" : "JOIN observations_fts fts ON fts.id = o.id"}
+    WHERE ${clauses.length > 0 ? clauses.join(" AND ") : "1"}
+    ORDER BY ${ftsQuery === undefined ? "o.created_at DESC, o.rowid DESC" : "rank"}
+    LIMIT ?
+  `;
+  return db.prepare(sql).all(...params) as SearchResult[];
 }
 
 export function searchObservations(
   db: Database,
   query: string,
   projectId?: string,
-  limit: number = 10
-): Observation[] {
+  limit: number = 10,
+  filters: SearchFilters = {}
+): SearchResult[] {
   const trimmed = query.trim();
   if (!trimmed) {
-    return [];
+    return filters.file === undefined ? [] : runSearch(db, undefined, projectId, limit, filters);
   }
 
-  let ftsQuery: string;
   if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length > 2) {
     const unquoted = trimmed.slice(1, -1).replace(/"/g, '""');
-    ftsQuery = `"${unquoted}"`;
-  } else {
-    const terms = trimmed
-      .replace(/"/g, "")
-      .split(/\s+/)
-      .filter(Boolean);
-    ftsQuery = terms.length > 0 ? terms.map((t) => `"${t}"`).join(" ") : '""';
+    return runSearch(db, `"${unquoted}"`, projectId, limit, filters);
   }
 
-  let sql = `
-    SELECT o.id, o.session_id as sessionId, o.project_id as projectId, o.type,
-           o.summary, o.content, o.tokens_approx as tokensApprox, o.created_at as createdAt
-    FROM observations_fts fts
-    JOIN observations o ON o.id = fts.id
-    WHERE observations_fts MATCH ?
-  `;
-  const params: any[] = [ftsQuery];
+  const terms = trimmed
+    .replace(/"/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t}"`);
+  if (terms.length === 0) return [];
 
-  if (projectId) {
-    sql += " AND o.project_id = ?";
-    params.push(projectId);
-  }
+  const strict = runSearch(db, terms.join(" "), projectId, limit, filters);
+  if (strict.length > 0 || terms.length === 1) return strict;
+  // One word that appears nowhere should not hide everything else the query matches
+  return runSearch(db, terms.join(" OR "), projectId, limit, filters);
+}
 
-  sql += " ORDER BY rank LIMIT ?";
-  params.push(limit);
+export interface Timeline {
+  anchor: Observation;
+  before: Observation[];
+  after: Observation[];
+}
 
-  return db.prepare(sql).all(...params) as Observation[];
+/** The observations recorded just before and after one observation in its session, oldest first. */
+export function getTimeline(db: Database, id: string, before: number = 5, after: number = 5): Timeline | null {
+  const anchor = db
+    .prepare(`SELECT ${OBSERVATION_COLUMNS}, o.rowid as rowid FROM observations o WHERE o.id = ?`)
+    .get(id) as (Observation & { rowid?: number }) | null;
+  if (!anchor) return null;
+  const { rowid, ...anchorObservation } = anchor;
+
+  // rowid breaks ties between observations recorded in the same millisecond
+  const neighbors = (comparison: "<" | ">", direction: "ASC" | "DESC", limit: number) =>
+    db
+      .prepare(`
+        SELECT ${OBSERVATION_COLUMNS}
+        FROM observations o
+        WHERE o.session_id = ?
+          AND (o.created_at ${comparison} ? OR (o.created_at = ? AND o.rowid ${comparison} ?))
+        ORDER BY o.created_at ${direction}, o.rowid ${direction}
+        LIMIT ?
+      `)
+      .all(anchor.sessionId, anchor.createdAt, anchor.createdAt, rowid ?? 0, limit) as Observation[];
+
+  return {
+    anchor: anchorObservation,
+    before: neighbors("<", "DESC", before).reverse(),
+    after: neighbors(">", "ASC", after),
+  };
 }
 
 export function getObservationById(db: Database, id: string): Observation | null {
-  const row = db.prepare(`
-    SELECT id, session_id as sessionId, project_id as projectId, type,
-           summary, content, tokens_approx as tokensApprox, created_at as createdAt
-    FROM observations
-    WHERE id = ?
-  `).get(id) as any;
+  const row = db.prepare(`SELECT ${OBSERVATION_COLUMNS} FROM observations o WHERE o.id = ?`).get(id) as any;
   return row ? (row as Observation) : null;
 }
 
@@ -196,17 +295,13 @@ export function getRecentSessions(db: Database, projectId: string, limit: number
 }
 
 export function getRecentObservations(db: Database, projectId?: string, limit: number = 20): Observation[] {
-  let sql = `
-    SELECT id, session_id as sessionId, project_id as projectId, type,
-           summary, content, tokens_approx as tokensApprox, created_at as createdAt
-    FROM observations
-  `;
+  let sql = `SELECT ${OBSERVATION_COLUMNS} FROM observations o`;
   const params: any[] = [];
   if (projectId) {
-    sql += " WHERE project_id = ?";
+    sql += " WHERE o.project_id = ?";
     params.push(projectId);
   }
-  sql += " ORDER BY created_at DESC LIMIT ?";
+  sql += " ORDER BY o.created_at DESC LIMIT ?";
   params.push(limit);
 
   return db.prepare(sql).all(...params) as Observation[];

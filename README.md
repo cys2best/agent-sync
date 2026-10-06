@@ -246,8 +246,24 @@ Search past work with the `/agent-sync:mem-search` skill, or directly:
 
 ```bash
 bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts search "<query>"
-bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts get <observation-id>
+bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts timeline <observation-id>
+bun run ~/.agent-sync/agent-mem/bin/agent-mem.ts get <observation-id> [<observation-id>...]
 ```
+
+`search` prints one line per match; `timeline` shows the steps just before and
+after one of them in its session; `get` prints the full content. Narrow a
+search with `--kind <kind>`, `--agent <type>`, `--type <type>`,
+`--session <id>`, `--since <30m|12h|2d|1w>`, or `--file <path>`. With `--file` the query is
+optional, so `search --file src/auth/guard.ts` lists everything that touched
+that file, from any agent. A query whose words never all appear together falls
+back to matching any of them.
+
+Every observation is given a kind when it is recorded: `request`, `finding`,
+`decision`, `change`, `verification`, `exploration`, `command`, `reply`, or
+`other`. Kinds come from fixed rules (the tool used, the command run, and
+phrases such as "root cause" or "decided to" in a reply), with no model call.
+The startup digest lists findings and decisions first, then changes and
+requests, then test runs, ahead of routine reads and commands.
 
 When a session stops, its transcript is recorded and summarized as the first
 prompt plus the files edited, so the next agent sees lines like
@@ -280,11 +296,20 @@ steps carry a byte offset, and `handoff <id> --step @<offset>`,
 `--before @<offset>`, or `--grep <text>` fetch more without reading the whole
 transcript.
 
-The injected digest is capped at about 250 tokens (`maxDigestTokens` in
-`agent-mem/src/config.ts`): the three most recent sessions plus as many recent
-observations as fit, each clipped to 120 characters. It does not grow with
-history; older work stays searchable instead. Wrap private details in
-`<private>` tags to keep them out of the store.
+The injected digest is capped at about 250 tokens: the three most recent
+sessions plus as many recent observations as fit, each clipped to 120
+characters. It does not grow with history; older work stays searchable
+instead. Wrap private details in `<private>` tags to keep them out of the
+store.
+
+To change the defaults, create `~/.agent-mem/settings.json` with any of these
+keys (values shown are the defaults):
+
+```json
+{ "maxDigestTokens": 250, "maxRecentSessionsInDigest": 3, "retentionDays": 90, "port": 3777 }
+```
+
+`AGENT_MEM_PORT` and `AGENT_MEM_RETENTION_DAYS` take precedence over the file.
 
 Memory is kept for 90 days. The daemon prunes on startup and then daily:
 observations and events older than that are deleted, and a session or project

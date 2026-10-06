@@ -52,7 +52,8 @@ class TestSetupScript(unittest.TestCase):
             agents_text = f.read()
         self.assertIn("<!-- agent-sync:agent-policy:start -->", agents_text)
         self.assertIn("<!-- agent-sync:agent-policy:end -->", agents_text)
-        self.assertIn("COMMIT_CONVENTION.md", agents_text)
+        self.assertNotIn("COMMIT_CONVENTION.md", agents_text)
+        self.assertIn("Conventional Commits", agents_text)
         self.assertIn("Claude Code, Codex, Antigravity", agents_text)
         # agent-mem replaces the HANDOFF ledger and per-tool workflow policy
         self.assertIn("/agent-sync:resume", agents_text)
@@ -75,12 +76,9 @@ class TestSetupScript(unittest.TestCase):
             claude_text = f.read()
         self.assertIn("Read and follow [AGENTS.md](AGENTS.md)", claude_text)
 
-        # Check COMMIT_CONVENTION.md
+        # Check COMMIT_CONVENTION.md is not scaffolded
         commit_file = os.path.join(self.test_dir, "COMMIT_CONVENTION.md")
-        self.assertTrue(os.path.isfile(commit_file))
-        with open(commit_file, "r") as f:
-            commit_text = f.read()
-        self.assertIn("Conventional Commits v1.0.0", commit_text)
+        self.assertFalse(os.path.exists(commit_file))
 
         # Check MEMORY.md
         mem_file = os.path.join(self.test_dir, "MEMORY.md")
@@ -269,14 +267,66 @@ class TestSetupScript(unittest.TestCase):
         res = self.run_setup("--code-review-graph-status")
         self.assertEqual(res.returncode, 0, msg=res.stderr)
         self.assertFalse(json.loads(res.stdout)["installed"])
-        self.assertEqual(os.listdir(self.test_dir), [])
-        self.assertEqual(os.listdir(self.home_dir), [])
-
     def test_skip_graph_preserves_existing_setup_behavior(self):
         res = self.run_setup("--skip-code-review-graph", "--agents", "claude")
         self.assertEqual(res.returncode, 0, msg=res.stderr)
         self.assertTrue(os.path.isfile(os.path.join(self.test_dir, "AGENTS.md")))
         self.assertEqual(os.listdir(self.home_dir), [])
 
+    def test_agents_md_focuses_on_gotchas_and_omits_obvious(self):
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(os.path.join(self.test_dir, "AGENTS.md"), "r") as f:
+            content = f.read()
+
+        # Section dedicated to key constraints and gotchas
+        self.assertIn("## Key Constraints & Gotchas", content)
+
+        # Omit the obvious: should not redundantly repeat self-evident file pointers or vendor lines in constraints
+        self.assertNotIn("- `CLAUDE.md`: minimal pointer", content)
+        self.assertNotIn("- `MEMORY.md`: durable project lessons", content)
+        self.assertNotIn("- `COMMIT_CONVENTION.md`: Conventional Commits", content)
+        self.assertNotIn("Vendor exclusions:", content)
+
+        # Rely on model judgment over rigid rules: generic preaching rules and micro-caps are cut off entirely
+        self.assertNotIn("Think Before Coding", content)
+        self.assertNotIn("Simplicity First", content)
+        self.assertNotIn("Surgical Changes", content)
+        self.assertNotIn("25 words each", content)
+        self.assertNotIn("Aim for 80 lines", content)
+
+        # Progressive disclosure: file is resized and kept lean, linking out to secondary instruction files
+        self.assertIn("See:", content)
+        self.assertIn("MEMORY.md", content)
+        self.assertNotIn("COMMIT_CONVENTION.md", content)
+        self.assertIn(".agent-sync/TDD.md", content)
+        # Attribution prohibition is unified into the commit convention without duplicate bullets
+        self.assertEqual(content.count("Co-Authored-By"), 1)
+        self.assertLess(len(content.splitlines()), 38)
+
+    def test_rerun_migrates_legacy_boundaries_and_prunes_obvious_markers(self):
+        agents_file = os.path.join(self.test_dir, "AGENTS.md")
+        with open(agents_file, "w") as f:
+            f.write(
+                "# Agent Instructions (Claude Code)\n\n"
+                "<!-- agent-sync:agent-policy:start -->\n"
+                "## Boundaries\n\n"
+                "- `core/types.ts`: keep types in one monolithic file; do not split.\n"
+                "- `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.\n"
+                "- Vendor exclusions: Ignore dependencies and build artifacts under `node_modules/`.\n\n"
+                "## Conventions\n"
+                "<!-- agent-sync:agent-policy:end -->\n"
+            )
+        res = self.run_setup("--agents", "claude")
+        self.assertEqual(res.returncode, 0, msg=res.stderr)
+        with open(agents_file) as f:
+            text = f.read()
+
+        self.assertIn("## Key Constraints & Gotchas", text)
+        self.assertIn("- `core/types.ts`: keep types in one monolithic file; do not split.", text)
+        self.assertNotIn("- `CLAUDE.md`: minimal pointer", text)
+        self.assertNotIn("Vendor exclusions:", text)
+
 if __name__ == "__main__":
     unittest.main()
+

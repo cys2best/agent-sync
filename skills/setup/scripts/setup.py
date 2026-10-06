@@ -184,16 +184,13 @@ def inspect_project(target_dir):
     if not info["overview"]:
         info["overview"] = "This repository maintains project workflows, tests, and shared agent instructions."
 
-    # Boundaries
+    # Boundaries / Key Constraints
     if os.path.isdir(os.path.join(target_dir, "skills")):
         info["boundaries"].append("- `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.")
     if os.path.isdir(os.path.join(target_dir, "registry")):
         info["boundaries"].append("- `registry/*.json`: declarative agent definitions; skills consume registry or custom config instead of hardcoded agent branches.")
     if os.path.isdir(os.path.join(target_dir, ".agent-sync", "scripts")):
         info["boundaries"].append("- `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.")
-    info["boundaries"].append("- `CLAUDE.md`: minimal pointer to `AGENTS.md`; shared project knowledge and agent instructions belong here.")
-    info["boundaries"].append("- `MEMORY.md`: durable project lessons and component pitfalls.")
-    info["boundaries"].append("- `COMMIT_CONVENTION.md`: Conventional Commits format and rules.")
 
     return info
 
@@ -248,20 +245,10 @@ def render_agents_md(template, effective_config, agents_registry, project_info):
         agent_name = target_display_names[0]
         agent_title = f"# {agent_name} Instructions"
         agent_section = f"## {agent_name} specific"
-        attribution_rule = (
-            "- Do not add a \"Co-Authored-By\" trailer or AI-attribution footer to\n"
-            "  commits or PRs. If this agent's setup has an equivalent\n"
-            "  auto-attribution behavior, disable it the same way\n"
-            "  `.claude/settings.json` does for Claude Code."
-        )
     else:
         joined_names = ", ".join(target_display_names)
         agent_title = f"# Agent Instructions ({joined_names})"
         agent_section = f"## {joined_names} specific"
-        attribution_rule = (
-            "- Do not add a \"Co-Authored-By\" trailer or AI-attribution footer to\n"
-            "  commits or PRs. Disable auto-attribution in your respective agent config."
-        )
 
     # Commands & Boundaries
     commands_rendered = "\n".join(project_info.get("commands", []))
@@ -269,10 +256,8 @@ def render_agents_md(template, effective_config, agents_registry, project_info):
         commands_rendered = "- Verify: `python3 -m unittest`"
 
     boundaries_rendered = "\n".join(project_info.get("boundaries", []))
-    vendor_dirs = project_info.get("vendor_dirs", [])
-    if vendor_dirs:
-        vendor_list = ", ".join(f"`{d}/`" for d in vendor_dirs)
-        boundaries_rendered += f"\n- Vendor exclusions: Ignore dependencies and build artifacts under {vendor_list}."
+    if not boundaries_rendered:
+        boundaries_rendered = "- Codebase-specific constraints and gotchas belong here; omit details evident from repository layout or linter rules."
 
     rendered = template.format(
         AGENT_TITLE=agent_title,
@@ -281,7 +266,7 @@ def render_agents_md(template, effective_config, agents_registry, project_info):
         BOUNDARIES_BLOCK=boundaries_rendered,
         COMMIT_EXAMPLE="feat(auth): add token refresh",
         AGENT_SECTION=agent_section,
-        ATTRIBUTION_RULE=attribution_rule,
+        ATTRIBUTION_RULE="",
     )
     return rendered
 
@@ -403,15 +388,26 @@ def run_setup(args):
             old_agents_text = f.read()
         existing_overview = extract_section_content(old_agents_text, "Overview")
         existing_commands = extract_section_content(old_agents_text, "Commands")
-        existing_boundaries = extract_section_content(old_agents_text, "Boundaries")
+        existing_boundaries = (
+            extract_section_content(old_agents_text, "Key Constraints & Gotchas")
+            or extract_section_content(old_agents_text, "Boundaries")
+        )
         if existing_overview:
             project_info["overview"] = existing_overview
         if existing_commands:
             project_info["commands"] = [line for line in existing_commands.splitlines() if line.strip()]
         if existing_boundaries:
-            # HANDOFF.md boundary lines came from older setups and would outlive the file itself
+            # Prune obsolete/redundant boundaries: HANDOFF.md, redundant file pointers under See, vendor boilerplate
+            obsolete_markers = (
+                "`HANDOFF.md`",
+                "`CLAUDE.md`",
+                "`MEMORY.md`",
+                "`COMMIT_CONVENTION.md`",
+                "Vendor exclusions:",
+            )
             project_info["boundaries"] = [
-                line for line in existing_boundaries.splitlines() if line.strip() and "`HANDOFF.md`" not in line
+                line for line in existing_boundaries.splitlines()
+                if line.strip() and not any(marker in line for marker in obsolete_markers)
             ]
 
     # 1. AGENTS.md
@@ -470,17 +466,7 @@ def run_setup(args):
                 f.write(claude_template)
             print("Created CLAUDE.md")
 
-    # 3. COMMIT_CONVENTION.md
-    commit_conv_path = os.path.join(target_dir, "COMMIT_CONVENTION.md")
-    if not os.path.isfile(commit_conv_path):
-        commit_template = read_template(templates_dir, "COMMIT_CONVENTION.md.template")
-        with open(commit_conv_path, "w", encoding="utf-8") as f:
-            f.write(commit_template)
-        print("Created COMMIT_CONVENTION.md")
-    else:
-        print("Preserved COMMIT_CONVENTION.md")
-
-    # 4. MEMORY.md
+    # 3. MEMORY.md
     memory_path = os.path.join(target_dir, "MEMORY.md")
     if not os.path.isfile(memory_path):
         memory_template = read_template(templates_dir, "MEMORY.md.template")

@@ -637,6 +637,15 @@ installer.apply_install(plan)
         engine.apply_install(self.plan(engine))
         self.assertTrue((self.home / ".claude/code-review-graph.md").is_file())
 
+    def test_builtin_agents_fallback_without_registry_file(self):
+        engine = self.engine()
+        non_existent = Path("/non/existent/path/agents.json")
+        loaded = engine.load_agents_registry(non_existent)
+        self.assertEqual(loaded, engine.BUILTIN_AGENTS)
+        self.assertIn("claude", loaded)
+        self.assertIn("codex", loaded)
+        self.assertIn("antigravity", loaded)
+
 
 if __name__ == "__main__":
     unittest.main()

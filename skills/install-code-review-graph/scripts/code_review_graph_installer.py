@@ -45,6 +45,41 @@ LEGACY_HOOK_ARTIFACTS = (
 )
 _HELD_LOCKS = set()
 REGISTRY = Path(__file__).resolve().parents[3] / "registry/agents.json"
+BUILTIN_AGENTS = {
+    "claude": {
+        "displayName": "Claude Code",
+        "contextFile": "AGENTS.md",
+        "codeReviewGraph": {
+            "context": ".claude/CLAUDE.md",
+            "doc": ".claude/code-review-graph.md",
+            "skills": ".claude/skills",
+            "mcp": ".claude.json",
+            "mcpFormat": "json",
+        },
+    },
+    "codex": {
+        "displayName": "Codex",
+        "contextFile": "AGENTS.md",
+        "codeReviewGraph": {
+            "context": ".codex/AGENTS.md",
+            "doc": ".codex/code-review-graph.md",
+            "skills": ".agents/skills",
+            "mcp": ".codex/config.toml",
+            "mcpFormat": "toml",
+        },
+    },
+    "antigravity": {
+        "displayName": "Antigravity",
+        "contextFile": "AGENTS.md",
+        "codeReviewGraph": {
+            "context": ".gemini/AGENTS.md",
+            "doc": ".gemini/code-review-graph.md",
+            "skills": ".gemini/config/skills",
+            "mcp": ".gemini/config/mcp_config.json",
+            "mcpFormat": "json",
+        },
+    },
+}
 REPOSITORY = "tirth8205/code-review-graph"
 API_URL = "https://api.github.com/repos/" + REPOSITORY
 MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
@@ -130,6 +165,14 @@ def parse_json(raw, path):
         return data
     except (ValueError, UnicodeError) as exc:
         raise InstallError(f"Could not parse JSON {path}: {exc}") from exc
+
+
+def load_agents_registry(registry_path: Path | None = None) -> dict:
+    if registry_path and registry_path.is_file():
+        return parse_json(registry_path.read_bytes(), registry_path)
+    if REGISTRY.is_file():
+        return parse_json(REGISTRY.read_bytes(), REGISTRY)
+    return BUILTIN_AGENTS
 
 
 def load_state(home):
@@ -378,7 +421,7 @@ def plan_install(options, release):
     template = Path(options.template_path).read_bytes().rstrip(b"\r\n")
     if CONTEXT_START in template or CONTEXT_END in template:
         raise InstallError("Context template must not contain installer ownership markers")
-    registry = parse_json(REGISTRY.read_bytes(), REGISTRY)
+    registry = load_agents_registry()
     agents = sorted(set(options.agents) | set(state.get("agents", [])))
     if not agents:
         raise InstallError("Select at least one supported agent")
@@ -842,7 +885,7 @@ def verify_installed(home, state):
             missing.append(key)
         elif key in LEGACY_HOOK_ARTIFACTS:
             missing.append(key)  # Local daemon-only migration, not a missing release file.
-    registry = parse_json(REGISTRY.read_bytes(), REGISTRY)
+    registry = load_agents_registry()
     for agent in state.get("agents", []):
         if agent in registry and "codeReviewGraph" in registry[agent]:
             doc = registry[agent]["codeReviewGraph"].get(

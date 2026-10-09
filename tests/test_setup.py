@@ -327,6 +327,18 @@ class TestSetupScript(unittest.TestCase):
         self.assertNotIn("- `CLAUDE.md`: minimal pointer", text)
         self.assertNotIn("Vendor exclusions:", text)
 
+    def test_templates_content_and_tdd_removed(self):
+        templates_dir = os.path.join(os.path.dirname(__file__), "..", "skills", "setup", "templates")
+        tdd_template = os.path.join(templates_dir, "TDD.md.template")
+        self.assertFalse(os.path.exists(tdd_template), "TDD.md.template should be removed")
+        agents_template_path = os.path.join(templates_dir, "AGENTS.md.template")
+        with open(agents_template_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        self.assertIn("# Agent Instructions", content)
+        self.assertNotIn("TDD.md", content)
+        self.assertNotIn("Superpowers", content)
+        self.assertIn("## Session Memory & Resuming", content)
+
 if __name__ == "__main__":
     unittest.main()
 

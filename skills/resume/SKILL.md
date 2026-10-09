@@ -29,7 +29,7 @@ The CLI talks to a local daemon on `127.0.0.1:3777`. In Codex, the default sandb
 
    If the handoff already makes the next step clear, continue without drilling down.
 
-3. **Check what changed since.** Run `git status` and `git log --oneline -5`. If `.agent-sync/todo/` holds a todo list for this work (from the `.agent-sync/TDD.md` workflow), read it: unchecked items are what remains. The other agent may have committed or edited files after its last recorded step; trust the repository over the transcript when they disagree.
+3. **Check what changed since.** Run `git status` and `git log --oneline -5`. If local plan or checklist files exist for this work, check them for remaining items. The other agent may have committed or edited files after its last recorded step; trust the repository over the transcript when they disagree.
 
 4. **Continue, don't restart.** Resume from the last step in the handoff. Do not redo steps it shows as finished. For example, if a review's findings are listed and some fixes are already applied, apply the remaining fixes rather than re-running the whole review. If a workflow tool manages the task, use its own resume path and treat the handoff as the record of what the interrupted step already did.
 

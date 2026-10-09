@@ -28,8 +28,6 @@ AGENT_MEM_HOOK_FILES = {
     "antigravity": os.path.join(".gemini", "config", "hooks.json"),
 }
 
-TODO_DIR_IGNORE = ".agent-sync/todo/"
-
 VENDOR_DIR_CANDIDATES = [
     "node_modules", "vendor", ".venv", "venv", "target", "dist", "build", ".next", "__pycache__"
 ]
@@ -41,7 +39,7 @@ def find_plugin_root():
     # Check parent dirs: from skills/setup/scripts, root is 3 levels up
     for levels in [3, 2, 1]:
         candidate = os.path.abspath(os.path.join(script_dir, *[".."] * levels))
-        if os.path.exists(os.path.join(candidate, "registry", "agents.json")):
+        if os.path.exists(os.path.join(candidate, "skills", "setup")):
             return candidate
     return os.getcwd()
 
@@ -63,13 +61,6 @@ def find_templates_dir(plugin_root, custom_dir=None):
         if os.path.isdir(c):
             return os.path.abspath(c)
     return os.path.join(skill_dir, "templates")
-
-def load_registry(plugin_root, registry_name):
-    path = os.path.join(plugin_root, "registry", f"{registry_name}.json")
-    if os.path.isfile(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
 
 def read_template(templates_dir, name):
     path = os.path.join(templates_dir, name)
@@ -187,69 +178,12 @@ def inspect_project(target_dir):
     # Boundaries / Key Constraints
     if os.path.isdir(os.path.join(target_dir, "skills")):
         info["boundaries"].append("- `skills/*`: preflight is read-only; apply only staged writes, then reread and verify preservation of unmanaged bytes.")
-    if os.path.isdir(os.path.join(target_dir, "registry")):
-        info["boundaries"].append("- `registry/*.json`: declarative agent definitions; skills consume registry or custom config instead of hardcoded agent branches.")
     if os.path.isdir(os.path.join(target_dir, ".agent-sync", "scripts")):
         info["boundaries"].append("- `.agent-sync/scripts/`: deterministic standalone Python helpers without external dependencies.")
 
     return info
 
-def resolve_effective_config(target_dir, cli_agents=None):
-    config_dir = os.path.join(target_dir, ".agent-sync")
-    config_path = os.path.join(config_dir, "config.json")
-    legacy_path = os.path.join(target_dir, ".agent-sync.json")
-
-    migrated = False
-    if os.path.isfile(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    elif os.path.isfile(legacy_path):
-        with open(legacy_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        migrated = True
-    else:
-        # Default configuration
-        agents = ["claude", "codex", "antigravity"]
-        if cli_agents:
-            agents = [a.strip() for a in cli_agents.split(",") if a.strip()]
-        config = {"agents": agents}
-
-    if cli_agents and not migrated and os.path.isfile(config_path):
-        config["agents"] = [a.strip() for a in cli_agents.split(",") if a.strip()]
-
-    # Workflow tools no longer need configuring: agent-mem resume plus the workflow's own command replace it
-    config.pop("workflowTools", None)
-
-    return config, migrated
-
-def render_agents_md(template, effective_config, agents_registry, project_info):
-    configured_agents = effective_config.get("agents", [])
-    resolved_agents = []
-    for item in configured_agents:
-        if isinstance(item, str):
-            meta = agents_registry.get(item, {
-                "displayName": item.title(),
-                "contextFile": "AGENTS.md",
-            })
-            resolved_agents.append((item, meta))
-        elif isinstance(item, dict):
-            agent_id = item.get("id", "custom")
-            resolved_agents.append((agent_id, item))
-
-    # Agents mapped to AGENTS.md
-    target_agents = [a for a in resolved_agents if a[1].get("contextFile", "AGENTS.md") == "AGENTS.md"]
-
-    target_display_names = [a[1].get("displayName", a[0]) for a in target_agents]
-
-    if len(target_agents) == 1:
-        agent_name = target_display_names[0]
-        agent_title = f"# {agent_name} Instructions"
-        agent_section = f"## {agent_name} specific"
-    else:
-        joined_names = ", ".join(target_display_names)
-        agent_title = f"# Agent Instructions ({joined_names})"
-        agent_section = f"## {joined_names} specific"
-
+def render_agents_md(template, project_info):
     # Commands & Boundaries
     commands_rendered = "\n".join(project_info.get("commands", []))
     if not commands_rendered:
@@ -260,13 +194,10 @@ def render_agents_md(template, effective_config, agents_registry, project_info):
         boundaries_rendered = "- Codebase-specific constraints and gotchas belong here; omit details evident from repository layout or linter rules."
 
     rendered = template.format(
-        AGENT_TITLE=agent_title,
         PROJECT_OVERVIEW=project_info.get("overview", ""),
         COMMANDS_BLOCK=commands_rendered,
         BOUNDARIES_BLOCK=boundaries_rendered,
         COMMIT_EXAMPLE="feat(auth): add token refresh",
-        AGENT_SECTION=agent_section,
-        ATTRIBUTION_RULE="",
     )
     return rendered
 
@@ -303,21 +234,6 @@ def missing_agent_mem_hooks(agent_ids, home_dir):
         if not installed:
             missing.append(agent_id)
     return missing
-
-def ensure_gitignored(target_dir, pattern):
-    """Append `pattern` to the project's .gitignore unless already listed. Returns True when it was added."""
-    path = os.path.join(target_dir, ".gitignore")
-    existing = ""
-    if os.path.isfile(path):
-        with open(path, "r", encoding="utf-8") as f:
-            existing = f.read()
-    if pattern in existing.splitlines():
-        return False
-    with open(path, "a", encoding="utf-8") as f:
-        if existing and not existing.endswith("\n"):
-            f.write("\n")
-        f.write(pattern + "\n")
-    return True
 
 def update_claude_settings(target_dir, vendor_dirs):
     claude_dir = os.path.join(target_dir, ".claude")
@@ -362,22 +278,21 @@ def run_setup(args):
     print(f"Plugin root: {plugin_root}")
     print(f"Templates directory: {templates_dir}")
 
-    agents_registry = load_registry(plugin_root, "agents")
+    legacy_config = os.path.join(target_dir, ".agent-sync", "config.json")
+    if os.path.isfile(legacy_config):
+        try:
+            os.remove(legacy_config)
+            print("Removed legacy .agent-sync/config.json")
+        except OSError:
+            pass
 
-    effective_config, migrated = resolve_effective_config(target_dir, args.agents)
-
-    config_dir = os.path.join(target_dir, ".agent-sync")
-    os.makedirs(config_dir, exist_ok=True)
-    config_path = os.path.join(config_dir, "config.json")
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(effective_config, f, indent=2)
-        f.write("\n")
-
-    if migrated:
-        legacy_path = os.path.join(target_dir, ".agent-sync.json")
-        if os.path.isfile(legacy_path):
-            os.remove(legacy_path)
-            print("Migrated .agent-sync.json to .agent-sync/config.json")
+    legacy_root_config = os.path.join(target_dir, ".agent-sync.json")
+    if os.path.isfile(legacy_root_config):
+        try:
+            os.remove(legacy_root_config)
+            print("Removed legacy .agent-sync.json")
+        except OSError:
+            pass
 
     project_info = inspect_project(target_dir)
     agents_path = os.path.join(target_dir, "AGENTS.md")
@@ -412,7 +327,7 @@ def run_setup(args):
 
     # 1. AGENTS.md
     agents_template = read_template(templates_dir, "AGENTS.md.template")
-    rendered_agents = render_agents_md(agents_template, effective_config, agents_registry, project_info)
+    rendered_agents = render_agents_md(agents_template, project_info)
 
     if os.path.isfile(agents_path):
         with open(agents_path, "r", encoding="utf-8") as f:
@@ -444,27 +359,25 @@ def run_setup(args):
             f.write(rendered_agents)
         print("Created AGENTS.md")
 
-    # 2. CLAUDE.md
-    configured_agent_ids = [a if isinstance(a, str) else a.get("id") for a in effective_config.get("agents", [])]
-    if "claude" in configured_agent_ids:
-        claude_md_path = os.path.join(target_dir, "CLAUDE.md")
-        claude_template = read_template(templates_dir, "CLAUDE.md.template")
-        if os.path.isfile(claude_md_path):
-            with open(claude_md_path, "r", encoding="utf-8") as f:
-                cur_claude = f.read()
-            upd_claude = replace_managed_block(cur_claude, START_POLICY_MARKER, END_POLICY_MARKER, claude_template.strip())
-            if upd_claude is not None:
-                with open(claude_md_path, "w", encoding="utf-8") as f:
-                    f.write(upd_claude)
-                print("Updated CLAUDE.md managed block")
-            else:
-                with open(claude_md_path, "w", encoding="utf-8") as f:
-                    f.write(claude_template)
-                print("Replaced CLAUDE.md")
+    # 2. CLAUDE.md - always scaffold minimal redirect
+    claude_md_path = os.path.join(target_dir, "CLAUDE.md")
+    claude_template = read_template(templates_dir, "CLAUDE.md.template")
+    if os.path.isfile(claude_md_path):
+        with open(claude_md_path, "r", encoding="utf-8") as f:
+            cur_claude = f.read()
+        upd_claude = replace_managed_block(cur_claude, START_POLICY_MARKER, END_POLICY_MARKER, claude_template.strip())
+        if upd_claude is not None:
+            with open(claude_md_path, "w", encoding="utf-8") as f:
+                f.write(upd_claude)
+            print("Updated CLAUDE.md managed block")
         else:
             with open(claude_md_path, "w", encoding="utf-8") as f:
                 f.write(claude_template)
-            print("Created CLAUDE.md")
+            print("Replaced CLAUDE.md")
+    else:
+        with open(claude_md_path, "w", encoding="utf-8") as f:
+            f.write(claude_template)
+        print("Created CLAUDE.md")
 
     # 3. MEMORY.md
     memory_path = os.path.join(target_dir, "MEMORY.md")
@@ -477,24 +390,11 @@ def run_setup(args):
     else:
         print("Preserved MEMORY.md")
 
-    # 5. .agent-sync/TDD.md — default workflow; preserved once it exists so projects can tailor it
-    tdd_path = os.path.join(target_dir, ".agent-sync", "TDD.md")
-    if not os.path.isfile(tdd_path):
-        with open(tdd_path, "w", encoding="utf-8") as f:
-            f.write(read_template(templates_dir, "TDD.md.template"))
-        print("Created .agent-sync/TDD.md")
-    else:
-        print("Preserved .agent-sync/TDD.md")
-
-    # Todo lists are per-machine working state; handoff between agents reads them from the working tree
-    if ensure_gitignored(target_dir, TODO_DIR_IGNORE):
-        print(f"Added {TODO_DIR_IGNORE} to .gitignore")
-
-    # 6. .claude/settings.json
+    # 4. .claude/settings.json
     update_claude_settings(target_dir, project_info.get("vendor_dirs", []))
     print("Updated .claude/settings.json")
 
-    # 7. Cleanup docs/PROJECT_CONTEXT.md if present
+    # 5. Cleanup docs/PROJECT_CONTEXT.md if present
     legacy_ctx = os.path.join(target_dir, "docs", "PROJECT_CONTEXT.md")
     if os.path.isfile(legacy_ctx):
         os.remove(legacy_ctx)
@@ -503,8 +403,8 @@ def run_setup(args):
     if os.path.isfile(os.path.join(target_dir, "HANDOFF.md")):
         print("HANDOFF.md is no longer managed (agent-mem sessions replace it); left untouched, delete it when unused")
 
-    # 8. Point out agents that will not record memory yet
-    for agent_id in missing_agent_mem_hooks(configured_agent_ids, os.path.expanduser("~")):
+    # 6. Point out agents that will not record memory yet
+    for agent_id in missing_agent_mem_hooks(["codex", "antigravity"], os.path.expanduser("~")):
         cli = os.path.join(plugin_root, "agent-mem", "bin", "agent-mem.ts")
         print(f'agent-mem hooks not installed for {agent_id}; run: bun run "{cli}" setup --agent {agent_id}')
 

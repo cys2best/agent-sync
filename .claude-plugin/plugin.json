@@ -1,7 +1,7 @@
 {
   "name": "agent-sync",
   "version": "0.9.3",
-  "description": "Keep multiple coding agents (Claude Code, Codex, Antigravity, and others) in sync on shared project context and task handoff, without duplicating what Superpowers already owns.",
+  "description": "Zero-config boilerplate and best practices for initializing projects for AI coding agents (Claude Code, Codex, Antigravity, and others).",
   "author": {
     "name": "cys2best"
   },

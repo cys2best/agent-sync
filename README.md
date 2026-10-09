@@ -1,10 +1,6 @@
 # agent-sync
 
-Keep multiple coding agents (Claude Code, Codex, Antigravity, Grok, Gemini, Cursor, or any
-custom agent) in sync on shared project context and cross-agent memory when
-they work on the same repo — including picking up a session another agent left
-unfinished — without duplicating what workflow plugins such as
-[Superpowers](https://github.com/obra/superpowers) already own.
+Zero-config project boilerplate and best-practices initializer for AI coding agents (Claude Code, Codex, Antigravity, Grok, Gemini, Cursor, or any custom agent). Scaffolds canonical project instructions, durable memory, vendor token guardrails, and cross-agent session continuity—with zero prompts and zero configuration files.
 
 ## What this solves
 
@@ -108,33 +104,22 @@ In any project, run:
 /agent-sync:setup
 ```
 
-First run: it asks which agents are working this repo (offering built-in
-defaults for Claude Code, Codex, Antigravity, Grok, Gemini, and Cursor — see
-`registry/agents.json` — plus support for custom agents). It then writes
-`.agent-sync/config.json`, `AGENTS.md` (with full project context and agent
-instructions, including when to search memory and resume), `CLAUDE.md` (a
-minimal managed redirect to `AGENTS.md`), `MEMORY.md` (for project learnings
-and component pitfalls), and `.claude/settings.json` (scaffolding
-`permissions.ask` for discovered vendor directories), plus `.agent-sync/TDD.md`:
-the default workflow agents follow for features and bug fixes when no plugin
-workflow such as Superpowers is in use (approved todo list, then
-red → green → refactor per task, with the list saved under
-`.agent-sync/todo/`, which setup adds to `.gitignore`, so another agent on the
-same machine can continue it). Edit it freely; setup
-keeps an existing copy. For enabled Codex or
-Antigravity agents whose global hooks lack agent-mem, it prints the one-line
-`agent-mem setup` command to run.
+It immediately inspects the repo and establishes best-practice AI engineering standards with zero prompts:
+- **`AGENTS.md`**: Canonical project instructions, auto-detected test/verify commands, and key codebase gotchas.
+- **`CLAUDE.md`**: Minimal 2-line managed redirect to `AGENTS.md`.
+- **`MEMORY.md`**: Durable architecture learnings and component pitfalls (preserved byte-for-byte once created).
+- **`.claude/settings.json`**: Restricts context usage via `permissions.ask` for discovered vendor directories (`node_modules`, `vendor`, `.venv`, `dist`, etc.) and disables commit attribution trailer noise.
+- **`agent-mem` checks**: Alerts if global hooks for Codex or Antigravity lack cross-agent session memory.
+
+No `.agent-sync/config.json` is generated or required. Target repositories remain pure, clean, and zero-footprint beyond standard instruction files.
 
 Upgrading from an older version: setup stops managing `HANDOFF.md` (an existing
-one is left untouched for you to delete), removes the `archive.py` SessionEnd
-hook from `.claude/settings.json`, and drops the old `workflowTools` key from
-the config.
+one is left untouched for you to delete), removes legacy `.agent-sync/config.json` if present,
+and removes legacy `archive.py` hooks from `.claude/settings.json`.
 
 Re-running without regeneration is safe. Generated policy is confined to managed blocks, so a
 rerun replaces only those blocks and preserves surrounding content; unrecognized or malformed
-files are left for review rather than overwritten. A pre-existing root
-`.agent-sync.json` from an older install is migrated automatically to
-`.agent-sync/config.json` the first time any agent-sync command runs.
+files are left for review rather than overwritten.
 
 Shared policy includes concise versions of the first three
 [Karpathy-inspired principles](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/README.md#the-four-principles-in-detail):

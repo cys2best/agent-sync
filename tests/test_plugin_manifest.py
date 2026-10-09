@@ -18,8 +18,9 @@ class TestPluginManifest(unittest.TestCase):
         self.assertEqual(data.get("name"), "agent-sync")
         self.assertIn("version", data)
         self.assertIn("description", data)
-        self.assertEqual(data.get("skills"), "./skills")
-        self.assertEqual(data.get("hooks"), "./.claude-plugin/hooks.json")
+        # Antigravity requires root plugin.json to omit string skills/hooks paths to prevent protojson parse errors
+        self.assertNotIn("skills", data)
+        self.assertNotIn("hooks", data)
 
     def test_claude_plugin_json_consistency(self):
         self.assertTrue(os.path.isfile(self.claude_plugin_json_path), ".claude-plugin/plugin.json must exist")
@@ -28,10 +29,11 @@ class TestPluginManifest(unittest.TestCase):
         with open(self.claude_plugin_json_path, "r", encoding="utf-8") as f:
             claude_data = json.load(f)
 
-        self.assertEqual(root_data.get("name"), claude_data.get("name"))
-        self.assertEqual(root_data.get("version"), claude_data.get("version"))
-        self.assertEqual(root_data.get("skills"), claude_data.get("skills"))
-        self.assertEqual(root_data.get("hooks"), claude_data.get("hooks"))
+        self.assertEqual(claude_data.get("name"), "agent-sync")
+        self.assertEqual(claude_data.get("version"), root_data.get("version"))
+        self.assertEqual(claude_data.get("skills"), "./skills")
+        self.assertEqual(claude_data.get("hooks"), "./.claude-plugin/hooks.json")
+
 
     def test_claude_plugin_hooks_configuration(self):
         self.assertTrue(os.path.isfile(self.hooks_json_path), ".claude-plugin/hooks.json must exist")
@@ -92,9 +94,9 @@ class TestPluginManifest(unittest.TestCase):
         self.assertIn('"$AGENT_MEM" handoff', content)
         self.assertIn("git status", content)
 
-    def test_resume_skill_checks_for_an_in_progress_todo_list(self):
+    def test_resume_skill_checks_for_an_in_progress_plan(self):
         with open(os.path.join(self.repo_root, "skills", "resume", "SKILL.md"), "r", encoding="utf-8") as f:
-            self.assertIn(".agent-sync/todo/", f.read())
+            self.assertIn("plan or checklist", f.read())
 
     def test_all_skills_have_valid_structure(self):
         skills_dir = os.path.join(self.repo_root, "skills")

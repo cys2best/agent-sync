@@ -30,7 +30,7 @@
 - Consumes: None
 - Produces: `BUILTIN_AGENTS` constant in `code_review_graph_installer.py`, self-contained agent paths without `registry/agents.json`.
 
-- [ ] **Step 1: Write a test asserting that `code_review_graph_installer` can load agents without `registry/agents.json` existing**
+- [x] **Step 1: Write a test asserting that `code_review_graph_installer` can load agents without `registry/agents.json` existing**
 
 Add a test method to `tests/test_code_review_graph_installer.py`:
 ```python
@@ -48,12 +48,12 @@ Add a test method to `tests/test_code_review_graph_installer.py`:
         self.assertIn("antigravity", loaded)
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `python3 -m unittest tests.test_code_review_graph_installer.TestCodeReviewGraphInstaller.test_builtin_agents_fallback_without_registry_file`
 Expected: FAIL (ImportError or AttributeError for `BUILTIN_AGENTS` / `load_agents_registry`)
 
-- [ ] **Step 3: Implement `BUILTIN_AGENTS` and `load_agents_registry` fallback in `code_review_graph_installer.py`**
+- [x] **Step 3: Implement `BUILTIN_AGENTS` and `load_agents_registry` fallback in `code_review_graph_installer.py`**
 
 In `skills/install-code-review-graph/scripts/code_review_graph_installer.py`:
 Define `BUILTIN_AGENTS`:
@@ -104,12 +104,12 @@ def load_agents_registry(registry_path: Path | None = None) -> dict:
 Update all places in `code_review_graph_installer.py` that read `REGISTRY.read_bytes()` to use `load_agents_registry()`.
 Delete `registry/agents.json` and remove the `registry/` directory.
 
-- [ ] **Step 4: Run tests to verify all code review graph tests pass**
+- [x] **Step 4: Run tests to verify all code review graph tests pass**
 
 Run: `python3 -m unittest tests/test_code_review_graph_installer.py`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add skills/install-code-review-graph/scripts/code_review_graph_installer.py tests/test_code_review_graph_installer.py
@@ -130,7 +130,7 @@ git commit -m "refactor(registry): internalize agent specs in installer and remo
 - Consumes: None
 - Produces: Streamlined `AGENTS.md.template` with universal `# Agent Instructions` header and no TDD/workflow state bullets.
 
-- [ ] **Step 1: Write test asserting template content and absence of TDD template**
+- [x] **Step 1: Write test asserting template content and absence of TDD template**
 
 In `tests/test_setup.py`, add a test:
 ```python
@@ -147,12 +147,12 @@ In `tests/test_setup.py`, add a test:
         self.assertIn("## Session Memory & Resuming", content)
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `python3 -m unittest tests.test_setup.TestSetupScript.test_templates_content_and_tdd_removed`
 Expected: FAIL
 
-- [ ] **Step 3: Delete `TDD.md.template` and update `AGENTS.md.template`**
+- [x] **Step 3: Delete `TDD.md.template` and update `AGENTS.md.template`**
 
 Remove `skills/setup/templates/TDD.md.template`.
 Update `skills/setup/templates/AGENTS.md.template`:
@@ -188,12 +188,12 @@ See:
 <!-- agent-sync:agent-policy:end -->
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python3 -m unittest tests.test_setup.TestSetupScript.test_templates_content_and_tdd_removed`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git rm skills/setup/templates/TDD.md.template
@@ -213,7 +213,7 @@ git commit -m "refactor(templates): remove TDD template and simplify AGENTS.md t
 - Consumes: Streamlined `AGENTS.md.template`
 - Produces: Pure zero-config `run_setup()` that generates `AGENTS.md`, `CLAUDE.md`, `MEMORY.md`, `.claude/settings.json` without creating `.agent-sync/config.json` or `.agent-sync/TDD.md`.
 
-- [ ] **Step 1: Update `tests/test_setup.py` for zero-config assertions**
+- [x] **Step 1: Update `tests/test_setup.py` for zero-config assertions**
 
 Update `tests/test_setup.py`:
 - In `test_first_run_scaffolds_all_files`:
@@ -224,12 +224,12 @@ Update `tests/test_setup.py`:
   - Assert `AGENTS.md` contains `# Agent Instructions` and does NOT contain `TDD.md`.
 - Remove or update tests that assert custom TDD preservation or dynamic agent list headers.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run: `python3 -m unittest tests.test_setup.TestSetupScript.test_first_run_scaffolds_all_files`
 Expected: FAIL
 
-- [ ] **Step 3: Update `skills/setup/scripts/setup.py`**
+- [x] **Step 3: Update `skills/setup/scripts/setup.py`**
 
 1. Remove `load_registry()` and `resolve_effective_config()`.
 2. In `render_agents_md(template, project_info)`:
@@ -252,12 +252,12 @@ Expected: FAIL
 8. Check missing agent-mem hooks directly for `["codex", "antigravity"]`.
 9. In `main()`, keep `--agents` as optional ignored arg to maintain backwards compatibility if called with `--agents`.
 
-- [ ] **Step 4: Run full `tests/test_setup.py`**
+- [x] **Step 4: Run full `tests/test_setup.py`**
 
 Run: `python3 -m unittest tests/test_setup.py`
 Expected: PASS (all tests pass)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add skills/setup/scripts/setup.py tests/test_setup.py
@@ -276,14 +276,14 @@ git commit -m "feat(setup): make project init zero-config and remove TDD scaffol
 - Consumes: Zero-config setup behavior
 - Produces: Updated markdown documentation for `/agent-sync:setup` and `/agent-sync:resume`.
 
-- [ ] **Step 1: Update `skills/setup/SKILL.md`**
+- [x] **Step 1: Update `skills/setup/SKILL.md`**
 
 Reflect that setup is zero-prompt:
 - Remove instructions for asking the user which agents to enable.
 - Remove references to `.agent-sync/config.json`, `.agent-sync/TDD.md`, and `.agent-sync/todo/`.
 - Document that `AGENTS.md`, `CLAUDE.md`, `MEMORY.md`, and `.claude/settings.json` are automatically created/updated with zero configuration.
 
-- [ ] **Step 2: Update `skills/resume/SKILL.md`**
+- [x] **Step 2: Update `skills/resume/SKILL.md`**
 
 In step 3, update the checklist advice:
 Replace:
@@ -295,11 +295,11 @@ With:
 If local plan or checklist files exist for this work, check them for remaining items.
 ```
 
-- [ ] **Step 3: Verify markdown formatting**
+- [x] **Step 3: Verify markdown formatting**
 
 Ensure all links and headers are properly formatted and valid markdown.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add skills/setup/SKILL.md skills/resume/SKILL.md
@@ -323,12 +323,12 @@ git commit -m "docs(skills): update setup and resume skill documentation for zer
 - Consumes: All updated tools and templates
 - Produces: Cleaned repo adhering to the new zero-config boilerplate standards.
 
-- [ ] **Step 1: Remove `.agent-sync/TDD.md` and clean `.gitignore`**
+- [x] **Step 1: Remove `.agent-sync/TDD.md` and clean `.gitignore`**
 
 Delete `.agent-sync/TDD.md`.
 In `.gitignore`, remove line `.agent-sync/todo/`.
 
-- [ ] **Step 2: Update repo's `AGENTS.md` and `CLAUDE.md`**
+- [x] **Step 2: Update repo's `AGENTS.md` and `CLAUDE.md`**
 
 Update `AGENTS.md` to conform to the new template:
 - Header: `# Agent Instructions`
@@ -337,7 +337,7 @@ Update `AGENTS.md` to conform to the new template:
 - Remove registry validation from verification command:
   `- Verify: python3 -m unittest discover -s tests -p "test_*.py"`
 
-- [ ] **Step 3: Update `README.md` and `plugin.json`**
+- [x] **Step 3: Update `README.md` and `plugin.json`**
 
 - Update `plugin.json` description: "Zero-config boilerplate and best practices for initializing projects for AI coding agents (Claude Code, Codex, Antigravity, and others)."
 - Update `README.md`:
@@ -345,12 +345,12 @@ Update `AGENTS.md` to conform to the new template:
   - Remove registry validation and TDD descriptions.
   - Highlight instant setup with standard files, vendor token limits, durable memory, and cross-agent resume.
 
-- [ ] **Step 4: Run full test suite**
+- [x] **Step 4: Run full test suite**
 
 Run: `python3 -m unittest discover -s tests -p "test_*.py"`
 Expected: Ran N tests ... OK (All passing)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git rm .agent-sync/TDD.md
